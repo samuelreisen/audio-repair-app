@@ -32,6 +32,7 @@ import numpy as np
 from .io import load_audio, save_audio
 from .declick import declick
 from .tame import tame
+from .studio import studio_available, studio_enhance
 from .declip import declip
 from .denoise import denoise
 from .dereverb import dereverb
@@ -43,6 +44,7 @@ DEFAULT_OPTS = {
     "declick": True,
     "tame": True,
     "declip": True,
+    "studio": False,               # optional AI voice restoration (slow, voice only); see pipeline/studio.py
     "denoise": True,
     "denoise_strength": None,      # None = automatic
     "eq": True,
@@ -50,12 +52,13 @@ DEFAULT_OPTS = {
     "auto": True,
 }
 
-STAGE_ORDER = ("declick", "tame", "declip", "denoise", "eq", "master")
+STAGE_ORDER = ("declick", "tame", "declip", "studio", "denoise", "eq", "master")
 
 _PROGRESS = {"analyse": (0.05, "Analysing the recording"),
              "declick": (0.08, "Removing clicks and pops"),
              "tame": (0.09, "Taming bumps and bangs"),
              "declip": (0.10, "Repairing clipping"),
+             "studio": (0.30, "Rebuilding the voice (AI)"),
              "dereverb": (0.30, "Reducing room reverb"),
              "denoise": (0.35, "Removing background noise"),
              "level": (0.65, "Evening out levels"),
@@ -159,6 +162,7 @@ def process_array(audio, sr, mode="voice", opts=None, progress=None):
         say("Skipped", "repair stages (the clip is shorter than half a second)")
         order = tuple(s for s in order if s == "master")
     explicit_dereverb = "dereverb" in order
+    studio_done = False
     explicit_level = "level" in order
     voice = mode == "voice"
 
@@ -197,6 +201,22 @@ def process_array(audio, sr, mode="voice", opts=None, progress=None):
             x = declip(x)
             say("Applied", "clipping repair on %.1f%% of the samples; peaks rebuilt, headroom restored"
                 % an["clip_pct"])
+        # ------------------------------------------------------------------ studio voice (optional, AI, voice only)
+        elif st == "studio":
+            if not o.get("studio") or not voice:
+                continue
+            if not studio_available():
+                say("Skipped", "Studio voice (the AI model is not installed)")
+                continue
+            prog("studio")
+
+            def _studio_progress(f):
+                if progress:
+                    progress(0.30 + 0.40 * f, "Rebuilding the voice (AI) %d%%" % int(100 * f))
+            x = studio_enhance(x, sr, _studio_progress).astype(np.float32)
+            studio_done = True
+            say("Applied", "Studio voice: the voice was rebuilt with an AI model (Resemble Enhance) and blended "
+                           "with the cleaned original")
         # ------------------------------------------------------------------ dereverb (explicit stage)
         elif st == "dereverb":
             if not o["denoise"] or not voice:
@@ -211,6 +231,9 @@ def process_array(audio, sr, mode="voice", opts=None, progress=None):
         elif st == "denoise":
             if not o["denoise"]:
                 say("Skipped", "noise reduction (switched off)")
+                continue
+            if studio_done:
+                say("Skipped", "noise reduction (the Studio voice model already removed the noise)")
                 continue
             forced = o.get("denoise_strength") is not None
             strength = float(o["denoise_strength"]) if forced else auto_denoise_strength(an, mode)

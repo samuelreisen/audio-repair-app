@@ -148,9 +148,19 @@ Result on the two recordings: both now land at -16.0 LUFS / -1.0 dBTP (josh6 was
 Try your own with `bench\process_samples.py` (outputs in `samples\out\`).
 
 ## Desktop apps (.exe, .dmg, Linux)
-`launcher.py` is the desktop entry point: it starts the server on a free port, opens your browser, and shows a small
-window with Open and Quit. If it cannot start, that window shows the error and writes `audio_repair.log` in the
-temp folder. `build.py` packages it with PyInstaller.
+`desktop.py` is the desktop entry point: the same interface in its own native window (WebView2 on Windows, the system
+web view on macOS, Qt WebEngine on Linux), talking to the Python engine directly through pywebview's bridge. **No
+server and no network port**: files are opened and saved with the system dialogs and processed where they are. The page
+(`static/index.html`) detects whether it runs in the app window or in a browser and uses the matching route.
+If the native window cannot be created, or has not loaded after 30 seconds, the app restarts itself in browser mode
+(`launcher.py`: a small local server plus your browser) instead of freezing; startup problems are written to
+`audio_repair.log` in the temp folder. `build.py` packages it with PyInstaller (it builds in the temp folder, because
+OneDrive and similar sync clients lock the build files).
+
+Tested on the packaged Windows app (`AUDIO_REPAIR_SELFTEST=<file>` makes the app drive its own page and write a JSON
+result): window opens, file selected, repair runs, both players load audio supplied by Python, Save works, the app's
+process tree has **zero listening TCP ports**, and a real 109 s MP4 voice memo is decoded and repaired. The forced
+fallback to browser mode was also tested. Not tested: the macOS and Linux native windows.
 
 * **Windows (built and tested here):** `python build.py` makes `dist\Audio Repair\Audio Repair.exe` (235 MB folder,
   about 105 MB zipped as `release\Audio-Repair-Windows.zip`). Keep the whole folder together; double-click the exe.
@@ -158,7 +168,7 @@ temp folder. `build.py` packages it with PyInstaller.
 * **macOS (.dmg) and Linux (AppImage and .tar.gz):** these cannot be built on Windows. `.github/workflows/build.yml`
   builds all three on GitHub's own Windows, macOS and Linux machines. Run it from the repository's Actions tab, or push
   a tag such as `v1.0` to attach the files to a Release. The macOS app is unsigned: right-click the app, choose Open the
-  first time (or `xattr -dr com.apple.quarantine "Audio Repair.app"`). All three builds succeeded on GitHub (run 39030017126). The Windows app was launched and tested; the macOS and Linux files were built and checked to be well-formed, but have not been launched on a Mac or Linux machine yet.
+  first time (or `xattr -dr com.apple.quarantine "Audio Repair.app"`). The first builds (browser-mode version, run 39030017126) succeeded on all three; the native-window version has only been built and tested on Windows so far, and the macOS and Linux files have never been launched on a Mac or Linux machine.
 * **What the packaged app includes:** the full repair pipeline with RNNoise and M4A/MP4 decoding. The optional
   DeepFilterNet neural denoiser needs a separate Python 3.11 environment and is not bundled; the app falls back to the
   built-in denoiser automatically.

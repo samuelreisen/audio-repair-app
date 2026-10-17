@@ -11,6 +11,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -32,25 +33,40 @@ def find_rnnoise():
 
 def main():
     sep = os.pathsep
+    # Build outside the project folder: if it lives in OneDrive / Dropbox, the sync client locks the build's
+    # thousands of files and PyInstaller cannot clean up after itself. The finished app is copied into dist/.
+    scratch = Path(os.environ.get("AUDIO_REPAIR_BUILD_DIR") or Path(tempfile.gettempdir()) / "audio_repair_build")
+    shutil.rmtree(scratch, ignore_errors=True)
     args = [sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--name", NAME, "--windowed",
-            "--add-data", f"static{sep}static",
+            "--distpath", str(scratch / "dist"), "--workpath", str(scratch / "work"), "--specpath", str(scratch),
+            "--add-data", f"{ROOT / 'static'}{sep}static",
             "--collect-all", "av",
             "--collect-submodules", "uvicorn",
             "--collect-submodules", "pipeline",
+            "--collect-all", "webview",                  # the native window, including its WebView2 helper DLLs
+            "--hidden-import", "engine", "--hidden-import", "launcher",
             "--hidden-import", "multipart", "--hidden-import", "python_multipart",
             "--exclude-module", "matplotlib", "--exclude-module", "pytest", "--exclude-module", "IPython",
-            "--exclude-module", "torch", "--exclude-module", "pystoi", "--exclude-module", "noisereduce",
+            "--exclude-module", "torch", "--exclude-module", "torchaudio", "--exclude-module", "resemble_enhance",
+            "--exclude-module", "df", "--exclude-module", "pipeline.studio_worker",   # Studio voice runs in .venv311 only
+"--exclude-module", "pystoi", "--exclude-module", "noisereduce",
             "--exclude-module", "pedalboard"]
+    if sys.platform == "win32":                         # Windows window = WebView2 through pythonnet
+        args += ["--collect-all", "clr_loader", "--collect-all", "pythonnet"]
     lib = find_rnnoise()
     if lib:
         args += ["--add-binary", f"{lib}{sep}rnnoise"]
         print("bundling RNNoise:", lib)
     else:
         print("note: pyrnnoise not installed, the app will use its built-in denoiser only")
-    args.append("launcher.py")
+    args.append(str(ROOT / "desktop.py"))
     print(" ".join(args))
     subprocess.run(args, cwd=ROOT, check=True)
-    out = ROOT / "dist" / (NAME + (".app" if sys.platform == "darwin" else ""))
+    built = scratch / "dist" / (NAME + (".app" if sys.platform == "darwin" else ""))
+    out = ROOT / "dist" / built.name
+    (ROOT / "dist").mkdir(exist_ok=True)
+    shutil.rmtree(out, ignore_errors=True)
+    shutil.copytree(built, out, symlinks=True, dirs_exist_ok=True)   # tolerate files a sync client still holds
     print("built:", out, "exists:", out.exists())
 
 

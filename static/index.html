@@ -154,6 +154,8 @@
   #report li { position: relative; min-height: var(--target); padding: 10px 16px; font-size: .9375rem; display: flex; align-items: center; }
   #report li + li::before { content: ""; position: absolute; top: 0; inset-inline: 16px 0; border-top: .5px solid var(--separator); }
   .dlwrap { padding: 16px; border-top: .5px solid var(--separator); }
+  .saved { margin-top: 10px; font-size: .9375rem; color: var(--green-text); word-break: break-all; }
+  .saved:empty { display: none; }
 
   /* Entry reveal: plays when scrolled into view and again from either direction */
   @media (prefers-reduced-motion: no-preference) {
@@ -213,6 +215,8 @@
       <input class="switch" type="checkbox" id="tame" role="switch" checked></label>
     <label class="row"><span><span class="t">Fix clipping</span><span class="d">Rebuild flattened, distorted peaks</span></span>
       <input class="switch" type="checkbox" id="declip" role="switch" checked></label>
+    <label class="row"><span><span class="t">Studio voice (AI)</span><span class="d" id="studiod">Rebuilds the voice with an AI model. Slow, and for spoken voice only</span></span>
+      <input class="switch" type="checkbox" id="studio" role="switch"></label>
     <label class="row"><span><span class="t">Reduce noise</span><span class="d">Hiss, hum and room echo</span></span>
       <input class="switch" type="checkbox" id="denoise" role="switch" checked></label>
     <label class="row"><span><span class="t">Improve tone</span><span class="d">Muddy, boxy or thin microphone sound</span></span>
@@ -247,7 +251,7 @@
     <div class="group">
       <div class="clip"><span class="t">Before</span><canvas id="wo" class="wave" aria-hidden="true"></canvas><audio id="orig" controls></audio></div>
       <div class="clip"><span class="t">After</span><canvas id="wf" class="wave" aria-hidden="true"></canvas><audio id="fixed" controls></audio></div>
-      <div class="dlwrap"><a id="dl" class="btn prominent">Download repaired file</a></div>
+      <div class="dlwrap"><a id="dl" class="btn prominent">Download repaired file</a><div id="saved" class="saved" aria-live="polite"></div></div>
     </div>
     <div class="head">What was done</div>
     <div class="group"><ul id="report"></ul></div>
@@ -256,10 +260,35 @@
 
 <script>
 const $ = id => document.getElementById(id);
-let file = null, busy = false, origUrl = null;
+let file = null, busy = false, origUrl = null, fixedUrl = null, jobId = null;
 const drop = $('drop'), input = $('file');
-const offline = !location.protocol.startsWith('http');
-if (offline) $('offline').hidden = false;
+
+/* Two ways to run: inside the desktop app window the page talks to Python directly (no server, native Open and
+   Save dialogs); in a browser it talks to the local server as before. */
+let native = false;
+const isHttp = location.protocol.startsWith('http');
+const api = () => window.pywebview && window.pywebview.api;
+function enterNative() {
+  if (native || !api()) return;
+  native = true;
+  $('offline').hidden = true;
+  $('dl').textContent = 'Save repaired file';
+  $('dl').setAttribute('role', 'button'); $('dl').tabIndex = 0;
+  api().capabilities().then(c => { if (!c.mp3) disableMp3(); if (!c.studio) disableStudio(); }).catch(() => {});
+}
+if (api()) enterNative(); else window.addEventListener('pywebviewready', enterNative);
+setTimeout(() => { if (!isHttp && !native) $('offline').hidden = false; }, 1500);   // opened as a bare file
+
+function disableStudio() {
+  $('studio').checked = false;
+  $('studio').disabled = true;
+  $('studiod').textContent = 'Not installed on this computer (see the README, Studio voice)';
+}
+function disableMp3() {
+  const m = document.querySelector('input[name=fmt][value=mp3]');
+  m.disabled = true;
+  m.parentElement.title = 'MP3 export needs ffmpeg (winget install ffmpeg)';
+}
 
 /* Reveals play on enter and reverse on exit, so they replay from either scroll direction. */
 const io = 'IntersectionObserver' in window ? new IntersectionObserver(es => {
@@ -273,30 +302,31 @@ function reveal(el) { if (io) io.observe(el); else el.classList.add('in'); }
 document.querySelectorAll('.reveal').forEach(reveal);
 
 function setFile(f) {
-  if (busy || offline) return;                                   // never swap the file under a running job
+  if (busy || (!isHttp && !native)) return;                      // never swap the file under a running job
   file = f || null;
   $('fname').textContent = file ? file.name : '';
   $('go').disabled = !file;
 }
+window.__dropped = info => { if (info) setFile(info); };         // called by the app when a file is dropped on the window
 async function errText(r) {
   try { const j = await r.json(); return typeof j.detail === 'string' ? j.detail : 'The request failed. Try again.'; }
   catch { return 'The request failed. Try again.'; }
 }
-fetch('/capabilities').then(r => r.json()).then(c => {
-  if (!c.mp3) {
-    const m = document.querySelector('input[name=fmt][value=mp3]');
-    m.disabled = true;
-    m.parentElement.title = 'MP3 export needs ffmpeg (winget install ffmpeg)';
-  }
-}).catch(() => {});
+if (isHttp) fetch('/capabilities').then(r => r.json()).then(c => { if (!c.mp3) disableMp3(); if (!c.studio) disableStudio(); }).catch(() => {});
 
-$('choose').onclick = e => { e.stopPropagation(); input.click(); };
-drop.onclick = () => input.click();
-drop.onkeydown = e => { if (e.target === drop && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); input.click(); } };
+function choose() {
+  if (native) { api().pick_file().then(info => { if (info) setFile(info); }); }
+  else input.click();
+}
+$('choose').onclick = e => { e.stopPropagation(); choose(); };
+drop.onclick = choose;
+drop.onkeydown = e => { if (e.target === drop && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); choose(); } };
 input.onchange = () => setFile(input.files[0]);
 drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
 drop.ondragleave = () => drop.classList.remove('over');
-drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); setFile(e.dataTransfer.files[0]); };
+drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); if (!native) setFile(e.dataTransfer.files[0]); };
+window.addEventListener('dragover', e => e.preventDefault());
+window.addEventListener('drop', e => e.preventDefault());       // dropping elsewhere must not navigate away
 
 function syncStrength() {
   const auto = $('auto').checked;
@@ -328,6 +358,32 @@ async function drawWave(canvas, arrayBuffer) {
   } catch (e) { canvas.hidden = true; }
 }
 
+function b64ToBytes(b64) {
+  const bin = atob(b64), n = bin.length, out = new Uint8Array(n);
+  for (let i = 0; i < n; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+/* Attach audio the app read from disk to a player and its waveform. */
+function attach(audioEl, canvas, res) {
+  if (!res) { audioEl.hidden = true; canvas.hidden = true; return null; }
+  const bytes = b64ToBytes(res.data);
+  const url = URL.createObjectURL(new Blob([bytes], { type: res.mime }));
+  audioEl.hidden = false; canvas.hidden = false;
+  audioEl.src = url;
+  drawWave(canvas, bytes.buffer.slice(0));
+  return url;
+}
+
+function settings() {
+  const o = {
+    mode: document.querySelector('input[name=mode]:checked').value,
+    fmt: document.querySelector('input[name=fmt]:checked').value,
+  };
+  for (const k of ['declick', 'tame', 'declip', 'studio', 'denoise', 'eq', 'master']) o[k] = $(k).checked;
+  if (!$('auto').checked) o.denoise_strength = parseFloat($('strength').value);   // absent = automatic
+  return o;
+}
+
 $('go').onclick = async () => {
   if (busy || !file) return;
   busy = true;
@@ -335,25 +391,36 @@ $('go').onclick = async () => {
   $('go').disabled = true;
   $('result').hidden = true;
   $('err').textContent = '';
+  $('saved').textContent = '';
   show($('prog'));
-  $('msg').textContent = 'Uploading';
+  $('msg').textContent = native ? 'Starting' : 'Uploading';
   $('bar').style.transform = 'scaleX(0)';
-  const fd = new FormData();
-  fd.append('file', sent);
-  fd.append('mode', document.querySelector('input[name=mode]:checked').value);
-  fd.append('fmt', document.querySelector('input[name=fmt]:checked').value);
-  for (const k of ['declick', 'tame', 'declip', 'denoise', 'eq', 'master']) fd.append(k, $(k).checked);
-  if (!$('auto').checked) fd.append('denoise_strength', $('strength').value);   // absent = automatic
   try {
-    const r = await fetch('/process', { method: 'POST', body: fd });
-    if (!r.ok) throw new Error(await errText(r));
-    const { id } = await r.json();
+    let id;
+    const opts = settings();
+    if (native) {
+      const r = await api().start(sent.path, opts);
+      if (r.error) throw new Error(r.error);
+      id = r.id;
+    } else {
+      const fd = new FormData();
+      fd.append('file', sent);
+      for (const [k, v] of Object.entries(opts)) fd.append(k, v);
+      const r = await fetch('/process', { method: 'POST', body: fd });
+      if (!r.ok) throw new Error(await errText(r));
+      id = (await r.json()).id;
+    }
+    jobId = id;
     let lines = [];
     while (true) {
       await new Promise(r => setTimeout(r, 700));
-      const pr = await fetch('/status/' + id);
-      if (!pr.ok) throw new Error(await errText(pr));
-      const s = await pr.json();
+      let s;
+      if (native) s = await api().status(id);
+      else {
+        const pr = await fetch('/status/' + id);
+        if (!pr.ok) throw new Error(await errText(pr));
+        s = await pr.json();
+      }
       if (s.state === 'error') { $('msg').textContent = 'This file could not be repaired'; throw new Error(s.message); }
       $('msg').textContent = s.message;
       $('bar').style.transform = 'scaleX(' + s.progress + ')';
@@ -363,14 +430,20 @@ $('go').onclick = async () => {
     ul.textContent = '';
     for (const l of lines) { const li = document.createElement('li'); li.textContent = l; ul.appendChild(li); }
     if (origUrl) URL.revokeObjectURL(origUrl);
-    origUrl = URL.createObjectURL(sent);
-    $('orig').src = origUrl;
-    $('fixed').src = '/download/' + id;
-    $('dl').href = '/download/' + id;
+    if (fixedUrl) URL.revokeObjectURL(fixedUrl);
     show($('result'));
-    $('wo').hidden = $('wf').hidden = false;
-    sent.arrayBuffer().then(b => drawWave($('wo'), b));
-    fetch('/download/' + id).then(x => x.arrayBuffer()).then(b => drawWave($('wf'), b)).catch(() => { $('wf').hidden = true; });
+    if (native) {
+      origUrl = attach($('orig'), $('wo'), await api().read_original(sent.path));
+      fixedUrl = attach($('fixed'), $('wf'), await api().read_result(id));
+    } else {
+      origUrl = URL.createObjectURL(sent);
+      $('orig').src = origUrl;
+      $('fixed').src = '/download/' + id;
+      $('dl').href = '/download/' + id;
+      $('wo').hidden = $('wf').hidden = false;
+      sent.arrayBuffer().then(b => drawWave($('wo'), b));
+      fetch('/download/' + id).then(x => x.arrayBuffer()).then(b => drawWave($('wf'), b)).catch(() => { $('wf').hidden = true; });
+    }
     $('result').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   } catch (e) {
     $('err').textContent = e.message || 'Something went wrong. Try again.';
@@ -378,6 +451,18 @@ $('go').onclick = async () => {
   busy = false;
   $('go').disabled = !file;
 };
+
+/* Native app: the download button is a Save dialog. */
+async function saveResult(e) {
+  if (!native) return;                                  // browser mode: the link downloads normally
+  e.preventDefault();
+  if (!jobId) return;
+  const r = await api().save(jobId);
+  if (r.error) $('saved').textContent = r.error;
+  else if (r.saved) $('saved').textContent = 'Saved to ' + r.saved;
+}
+$('dl').onclick = saveResult;
+$('dl').onkeydown = e => { if (native && (e.key === 'Enter' || e.key === ' ')) saveResult(e); };
 </script>
 </body>
 </html>

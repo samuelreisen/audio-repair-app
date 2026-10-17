@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 
 from pipeline import run
 from pipeline.io import AudioError, mp3_supported
+from pipeline.studio import studio_available
 
 BASE = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))     # packaged app: bundled files live here
 # Recordings are private: keep them in the system temp folder, not in this (possibly cloud-synced) project folder.
@@ -75,7 +76,7 @@ def _worker(job_id, in_path, out_path, mode, opts):
 
 @app.get("/capabilities")
 def capabilities():
-    return {"mp3": mp3_supported(), "max_upload_mb": MAX_UPLOAD_MB}
+    return {"mp3": mp3_supported(), "studio": studio_available(), "max_upload_mb": MAX_UPLOAD_MB}
 
 
 @app.post("/process")
@@ -85,6 +86,7 @@ async def process(
     fmt: str = Form("wav"),
     declick: bool = Form(True),
     tame: bool = Form(True),
+    studio: bool = Form(False),
     declip: bool = Form(True),
     denoise: bool = Form(True),
     # omitted / empty = chosen automatically from the analysis of the recording
@@ -115,7 +117,7 @@ async def process(
     jobs[job_id] = {"state": "running", "progress": 0.0, "message": "Queued", "t": time.time(),
                     "in": str(in_path), "out": str(out_path), "report": report,
                     "name": f"{stem}_fixed.{fmt}"}
-    opts = dict(declick=declick, tame=tame, declip=declip, denoise=denoise, eq=eq, master=master, report=report)
+    opts = dict(declick=declick, tame=tame, studio=studio, declip=declip, denoise=denoise, eq=eq, master=master, report=report)
     if denoise_strength is not None:
         opts["denoise_strength"] = denoise_strength
     threading.Thread(target=_worker, args=(job_id, in_path, out_path, mode, opts),
