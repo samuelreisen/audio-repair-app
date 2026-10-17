@@ -1,15 +1,29 @@
 # Audio Repair
 
-Local web app that fixes clipping, background noise, room reverb, poor mic tone and loudness.
-Everything runs on the CPU; a 10 s clip takes roughly 5-10 s.
+Desktop app that fixes clicks, clipping, background noise, room reverb, poor mic tone and loudness in recordings.
+Everything runs offline on the CPU.
 
-## Start
-1. Install Python: `winget install Python.Python.3.11`
-2. Install ffmpeg (for MP3/M4A): `winget install ffmpeg`
-3. Double-click `run.bat`. First run installs packages, then opens http://127.0.0.1:8000.
+**To install the app, see [INSTALL.md](INSTALL.md).** The installers are built on GitHub
+(Actions tab, "Build desktop apps"): `Audio Repair - Windows Installer.exe` and `Audio Repair - Mac Installer.dmg`.
 
-Optional but recommended (neural speech-noise model used by the denoiser, ~13 MB):
-`.venv\Scripts\python.exe -m pip install --no-deps pyrnnoise`. Without it the classical estimator is used.
+## Project layout
+| Path | What it is |
+|---|---|
+| `desktop.py` | The app: native window (pywebview), talks to the engine directly, no server |
+| `engine.py` | Runs repair jobs in the background for the window |
+| `pipeline/` | The audio repair stages (below) and the AI models (`ai.py`, `dfn.py`, `studio*.py`) |
+| `static/index.html` | The app's interface |
+| `build.py`, `installer.iss`, `assets/` | Packaging: PyInstaller build, Windows installer, app icon |
+| `.github/workflows/build.yml` | Builds the Windows and Mac installers on GitHub |
+| `app.py`, `launcher.py` | Browser-mode fallback, used only if the native window cannot start |
+| `run.bat`, `setup_neural.bat` | Developer setup: run from source on Windows |
+| `tests/`, `bench/` | Tests and quality benchmarks |
+
+## Running from source (developers)
+1. `winget install Python.Python.3.11`
+2. Double-click `run.bat` (installs packages, opens the browser version), and `setup_neural.bat` once for the
+   DeepFilterNet3 model.
+3. `python desktop.py` opens the app window; `python build.py` packages it.
 
 ## Pipeline
 `analyse -> declip -> de-reverb + denoise -> tone -> master`  (`pipeline/__init__.py`)
@@ -121,16 +135,13 @@ denoise improves SNR and removes hum, tone stage, master hits target and ceiling
 ## Honest limits
 All numbers come from synthetic speech (Windows voices) with synthetic damage. They catch regressions and show the
 direction, but they do not prove how it sounds on your real recordings, which is the real test.
-A bad mic or room echo is only modestly improved. No heavy neural enhancer is used: DeepFilterNet has no
-Python 3.14 build, so noise removal is RNNoise plus a classical estimator.
 
-## Neural noise removal (DeepFilterNet3, optional, recommended)
-Run `setup_neural.bat` once (about 130 MB: PyTorch CPU plus DeepFilterNet; needs Python 3.11 because PyTorch has
-no Python 3.14 build). It creates `.venv311`; the app then runs DeepFilterNet3 through a subprocess
-(`pipeline/dfn.py`, `pipeline/dfn_worker.py`) for voice recordings and falls back to the built-in estimator when it is
-missing. Set `AR_DFN=0` to compare against the built-in path. Cost: about 10-20 s extra per file (model load).
-Measured on the bench, mean of 3 clips, with vs without it: noisy LSD -8.8 -> -11.1 dB, speech-to-noise range
-+20 -> +25 dB; clipped+noisy+bad mic+echo STOI +0.07 -> +0.09 and noise far lower (+21 -> +40 dB range).
+## Neural noise removal (DeepFilterNet3)
+The installed app includes DeepFilterNet3 and uses it for every voice recording (`pipeline/ai.py`, `pipeline/dfn.py`).
+When running from source it needs `.venv311` (`setup_neural.bat`); without it the built-in estimator is used.
+Set `AR_DFN=0` to compare. Measured on the bench, mean of 3 clips, with vs without it: noisy LSD -8.8 -> -11.1 dB,
+speech-to-noise range +20 -> +25 dB; clipped+noisy+bad mic+echo STOI +0.07 -> +0.09 and noise far lower
+(+21 -> +40 dB range).
 
 ## What real recordings taught us (voice memos, `samples/`)
 The first two real recordings (AAC voice memos, 109 s and 160 s) exposed what the synthetic bench could never show:
@@ -147,28 +158,16 @@ Result on the two recordings: both now land at -16.0 LUFS / -1.0 dBTP (josh6 was
 40 + 6 clicks / bangs repaired. M4A / MP4 / AAC input is decoded with PyAV, so ffmpeg is not required.
 Try your own with `bench\process_samples.py` (outputs in `samples\out\`).
 
-## Desktop apps (.exe, .dmg, Linux)
-`desktop.py` is the desktop entry point: the same interface in its own native window (WebView2 on Windows, the system
-web view on macOS, Qt WebEngine on Linux), talking to the Python engine directly through pywebview's bridge. **No
-server and no network port**: files are opened and saved with the system dialogs and processed where they are. The page
-(`static/index.html`) detects whether it runs in the app window or in a browser and uses the matching route.
-If the native window cannot be created, or has not loaded after 30 seconds, the app restarts itself in browser mode
-(`launcher.py`: a small local server plus your browser) instead of freezing; startup problems are written to
-`audio_repair.log` in the temp folder. `build.py` packages it with PyInstaller (it builds in the temp folder, because
-OneDrive and similar sync clients lock the build files).
+## Desktop app
+`desktop.py` shows the interface in its own native window (WebView2 on Windows, the system web view on macOS) and
+talks to the Python engine directly through pywebview's bridge. **No server and no network port**: files are opened
+and saved with the system dialogs. If the native window cannot start, the app falls back to browser mode
+(`launcher.py`) instead of freezing; startup problems go to `audio_repair.log` in the temp folder. `build.py` builds in
+the temp folder because OneDrive locks build files. Both AI models are bundled in the app (`models/`, set by
+`AUDIO_REPAIR_MODELS` at build time).
 
-Tested on the packaged Windows app (`AUDIO_REPAIR_SELFTEST=<file>` makes the app drive its own page and write a JSON
-result): window opens, file selected, repair runs, both players load audio supplied by Python, Save works, the app's
-process tree has **zero listening TCP ports**, and a real 109 s MP4 voice memo is decoded and repaired. The forced
-fallback to browser mode was also tested. Not tested: the macOS and Linux native windows.
-
-* **Windows (built and tested here):** `python build.py` makes `dist\Audio Repair\Audio Repair.exe` (235 MB folder,
-  about 105 MB zipped as `release\Audio-Repair-Windows.zip`). Keep the whole folder together; double-click the exe.
-  Windows SmartScreen may warn because the app is not code-signed: choose More info, then Run anyway.
-* **macOS (.dmg) and Linux (AppImage and .tar.gz):** these cannot be built on Windows. `.github/workflows/build.yml`
-  builds all three on GitHub's own Windows, macOS and Linux machines. Run it from the repository's Actions tab, or push
-  a tag such as `v1.0` to attach the files to a Release. The macOS app is unsigned: right-click the app, choose Open the
-  first time (or `xattr -dr com.apple.quarantine "Audio Repair.app"`). The native-window version builds successfully on all three platforms on GitHub (run 39039245519, commit dd8c928). Each download was checked to be well-formed (zip, dmg disk-image trailer, AppImage ELF header, gzip magic). Only the Windows app has been launched; the macOS and Linux apps have never been run on a Mac or Linux machine.
-* **What the packaged app includes:** the full repair pipeline with RNNoise and M4A/MP4 decoding. The optional
-  DeepFilterNet neural denoiser needs a separate Python 3.11 environment and is not bundled; the app falls back to the
-  built-in denoiser automatically.
+What has been tested (`AUDIO_REPAIR_SELFTEST=<file>` makes the app drive its own page and write a JSON result):
+the Windows installer installs per user with Start menu and desktop shortcuts and an uninstaller; the installed app
+opens its window, repairs a clipped, noisy recording with DeepFilterNet3 (12 s for a 13 s clip), plays both versions
+and saves the result; Studio voice works in the packaged app (102 s for the same clip); the app opens zero listening
+network ports. **Not tested:** the Mac app has been built on GitHub but never opened on a Mac.

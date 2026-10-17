@@ -2,9 +2,9 @@
 
     python build.py
 
-Output: dist/Audio Repair/  (Windows / Linux folder with the program)  or  dist/Audio Repair.app  (macOS).
-The GitHub workflow (.github/workflows/build.yml) runs this on all three systems and wraps the result
-into an installer-style file for each (zip with .exe, .dmg, AppImage / tar.gz).
+Output: dist/Audio Repair/  (Windows folder with the program)  or  dist/Audio Repair.app  (macOS).
+The GitHub workflow (.github/workflows/build.yml) runs this on Windows and Mac and wraps the result
+into an installer for each ("Audio Repair - Windows Installer.exe", "Audio Repair - Mac Installer.dmg").
 """
 import glob
 import os

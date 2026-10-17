@@ -1,4 +1,4 @@
-"""Desktop launcher for Audio Repair (what the packaged .exe / .app / Linux build runs).
+"""Browser-mode fallback for Audio Repair (desktop.py switches to it if the native window cannot start).
 
 Starts the local server on a free port, opens the browser, and shows a small window with Open and Quit buttons so
 there is always a visible way to close the app. Falls back to a console loop if no display is available.
