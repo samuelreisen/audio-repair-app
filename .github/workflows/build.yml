@@ -1,7 +1,7 @@
 name: Build desktop apps
 
 # Builds Audio Repair for Windows, macOS and Linux on GitHub's own machines:
-#   Windows  Audio-Repair-Setup-<v>-x64.exe (installer)  and  Audio-Repair-Portable-<v>-x64.exe (no install)
+#   Windows  Audio-Repair-Setup-<v>-x64.exe (installer)
 #   macOS    Audio-Repair-<v>-mac-arm64.dmg (drag to Applications)
 #   Linux    Audio-Repair-<v>-linux-x86_64.AppImage  and  Audio-Repair-<v>-linux-x86_64.tar.gz
 # Run it from the Actions tab ("Run workflow"), or push a tag like v1.0.0 to also attach the files to a Release.
@@ -31,14 +31,47 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.11"     # PyTorch 2.1 (needed by DeepFilterNet 0.5.6) supports up to 3.11
 
       - name: Install dependencies
         shell: bash
         run: |
           python -m pip install --upgrade pip
-          python -m pip install fastapi uvicorn python-multipart numpy scipy soundfile pyloudnorm av pyinstaller pillow
+          echo "numpy<2" > constraints.txt
+          # PyTorch, CPU only (the Linux default would pull ~2.5 GB of CUDA libraries)
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            python -m pip install -c constraints.txt torch==2.1.2 torchaudio==2.1.2 --index-url https://download.pytorch.org/whl/cpu
+          else
+            python -m pip install -c constraints.txt torch==2.1.2 torchaudio==2.1.2
+          fi
+          python -m pip install -c constraints.txt fastapi uvicorn python-multipart numpy scipy soundfile pyloudnorm av pyinstaller pillow
+          python -m pip install -c constraints.txt deepfilternet
+          # Resemble Enhance: inference only, without its training extras (deepspeed, gradio)
+          python -m pip install -c constraints.txt --no-deps resemble-enhance
+          python -m pip install -c constraints.txt celluloid librosa matplotlib omegaconf pandas ptflops resampy rich tabulate tqdm
           python -m pip install --no-deps pyrnnoise || echo "pyrnnoise unavailable on this platform, using the built-in denoiser"
+
+      - name: Fetch AI model weights
+        shell: bash
+        run: |
+          mkdir -p models/enhancer_stage2/ds/G/default
+          # DeepFilterNet3: let DeepFilterNet fetch its own official model, then copy it out of its cache
+          python -c "from df.enhance import init_df; init_df(log_level='ERROR')"
+          CACHE=$(python -c "import appdirs, os; print(os.path.join(appdirs.user_cache_dir('DeepFilterNet'), 'DeepFilterNet3'))")
+          cp -R "$CACHE" models/DeepFilterNet3
+          # Studio voice: Resemble Enhance weights from the official Hugging Face repository (MIT)
+          HF=https://huggingface.co/ResembleAI/resemble-enhance/resolve/main/enhancer_stage2
+          curl -sSfL "$HF/hparams.yaml" -o models/enhancer_stage2/hparams.yaml
+          curl -sSfL "$HF/ds/G/default/mp_rank_00_model_states.pt" -o models/enhancer_stage2/ds/G/default/mp_rank_00_model_states.pt
+          python - <<'PY'
+          import hashlib, pathlib, sys
+          f = pathlib.Path("models/enhancer_stage2/ds/G/default/mp_rank_00_model_states.pt")
+          h = hashlib.sha256(f.read_bytes()).hexdigest()
+          print(f, f.stat().st_size, h)
+          sys.exit(0 if h == "f9d035f318de3e6d919bc70cf7ad7d32b4fe92ec5cbe0b30029a27f5db07d9d6" else "Studio weights do not match the tested file")
+          PY
+          ls -R models | head -20
+          echo "AUDIO_REPAIR_MODELS=$PWD/models" >> "$GITHUB_ENV"
 
       - name: Native window library
         shell: bash
@@ -76,13 +109,6 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Get-ChildItem Audio-Repair-Setup-*.exe
 
-      - name: Package (Windows portable)
-        if: runner.os == 'Windows'
-        shell: bash
-        run: |
-          AUDIO_REPAIR_ONEFILE=1 python build.py
-          cp "dist/Audio Repair Portable.exe" "Audio-Repair-Portable-${APP_VERSION}-x64.exe"
-
       # ---------------------------------------------------------------- macOS: drag-to-Applications dmg
       - name: Package (macOS dmg)
         if: runner.os == 'macOS'
@@ -112,7 +138,6 @@ jobs:
           name: Audio-Repair-${{ matrix.name }}
           path: |
             Audio-Repair-Setup-*.exe
-            Audio-Repair-Portable-*.exe
             Audio-Repair-*-mac-*.dmg
             Audio-Repair-*-linux-*.AppImage
             Audio-Repair-*-linux-*.tar.gz
@@ -124,7 +149,6 @@ jobs:
         with:
           files: |
             Audio-Repair-Setup-*.exe
-            Audio-Repair-Portable-*.exe
             Audio-Repair-*-mac-*.dmg
             Audio-Repair-*-linux-*.AppImage
             Audio-Repair-*-linux-*.tar.gz

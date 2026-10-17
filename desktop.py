@@ -166,6 +166,7 @@ def main():
     # Hand the window the page itself rather than a file location: given a path, pywebview starts its own little
     # local web server, and this app is meant to run with no server and no network port at all.
     page = Path(_bundled("static", "index.html")).read_text(encoding="utf-8")
+    page = page.replace("<head>", "<head><script>window.__AR_NATIVE = true;</script>", 1)   # "you are in the app"
     try:
         api.window = webview.create_window("Audio Repair", html=page, js_api=api, width=560, height=900,
                                            min_size=(380, 560), text_select=False)
@@ -206,6 +207,9 @@ def _selftest(api):
         _trace("native = %r" % r["native_detected"])
         r["offline_banner_hidden"] = js("document.getElementById('offline').hidden")
         js("window.__dropped(%s)" % json.dumps(api.use_path(sample)))
+        r["studio_switch_enabled"] = js("!document.getElementById('studio').disabled")
+        if os.environ.get("AUDIO_REPAIR_SELFTEST_STUDIO") == "1":
+            js("document.getElementById('studio').checked = true")
         r["file_shown"] = js("document.getElementById('fname').textContent")
         _trace("file dropped, clicking Repair")
         js("document.getElementById('go').click()")

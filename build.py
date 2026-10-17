@@ -47,11 +47,25 @@ def main():
             "--collect-all", "webview",                  # the native window, including its WebView2 helper DLLs
             "--hidden-import", "engine", "--hidden-import", "launcher",
             "--hidden-import", "multipart", "--hidden-import", "python_multipart",
-            "--exclude-module", "matplotlib", "--exclude-module", "pytest", "--exclude-module", "IPython",
-            "--exclude-module", "torch", "--exclude-module", "torchaudio", "--exclude-module", "resemble_enhance",
-            "--exclude-module", "df", "--exclude-module", "pipeline.studio_worker",   # Studio voice runs in .venv311 only
-"--exclude-module", "pystoi", "--exclude-module", "noisereduce",
-            "--exclude-module", "pedalboard"]
+            "--exclude-module", "pytest", "--exclude-module", "IPython", "--exclude-module", "torchvision",
+            "--exclude-module", "pipeline.studio_worker", "--exclude-module", "pipeline.dfn_worker",
+            "--exclude-module", "pystoi", "--exclude-module", "noisereduce", "--exclude-module", "pedalboard"]
+    # AI models (DeepFilterNet3, Studio voice): included when this Python has PyTorch, with the model weights from
+    # AUDIO_REPAIR_MODELS (a folder holding DeepFilterNet3/ and enhancer_stage2/) shipped inside the app.
+    import importlib.util
+    ai = all(importlib.util.find_spec(m) is not None for m in ("torch", "torchaudio", "df", "resemble_enhance"))
+    models = os.environ.get("AUDIO_REPAIR_MODELS")
+    if ai:
+        if not models or not (Path(models) / "DeepFilterNet3" / "config.ini").exists()                 or not (Path(models) / "enhancer_stage2" / "hparams.yaml").exists():
+            sys.exit("AI build needs AUDIO_REPAIR_MODELS pointing at a folder with DeepFilterNet3/ and enhancer_stage2/")
+        args += ["--collect-all", "df", "--collect-all", "libdf", "--collect-all", "resemble_enhance",
+                 "--collect-submodules", "torchaudio", "--hidden-import", "pipeline.ai", "--hidden-import",
+                 "pipeline.studio_core", "--add-data", f"{models}{sep}models"]
+        print("AI build: PyTorch + DeepFilterNet3 + Studio voice, models from", models)
+    else:
+        args += ["--exclude-module", "torch", "--exclude-module", "torchaudio", "--exclude-module", "df",
+                 "--exclude-module", "resemble_enhance", "--exclude-module", "matplotlib"]
+        print("note: no PyTorch in this Python: building without the AI models (built-in denoiser only)")
     if sys.platform == "win32":                         # Windows window = WebView2 through pythonnet
         args += ["--collect-all", "clr_loader", "--collect-all", "pythonnet", "--icon", str(ROOT / "assets" / "icon.ico")]
     elif sys.platform == "darwin":

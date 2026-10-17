@@ -26,13 +26,17 @@ def _python():
 
 
 def dfn_available():
-    return os.environ.get("AR_DFN", "1") != "0" and _python() is not None
+    from . import ai
+    return os.environ.get("AR_DFN", "1") != "0" and (ai.inprocess() or _python() is not None)
 
 
 def dfn_enhance(audio, sr):
     """audio: float (channels, samples) at 48 kHz -> enhanced float32 array, same shape.  Raises on failure."""
     if sr != 48000:
         raise ValueError("DeepFilterNet path expects 48 kHz")
+    from . import ai
+    if ai.inprocess():                                         # packaged app: model runs right here
+        return ai.dfn_enhance_inproc(audio)
     py = _python()
     with tempfile.TemporaryDirectory() as td:
         i, o = os.path.join(td, "i.wav"), os.path.join(td, "o.wav")

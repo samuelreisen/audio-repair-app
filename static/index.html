@@ -173,7 +173,7 @@
 <main>
   <div id="offline" class="group pad" hidden style="margin-bottom:20px">
     <div class="t" style="font-weight:600">The app is not running</div>
-    <div class="d" style="color:var(--label2);font-size:.9375rem">This page only works when it is opened by the app. Close it, double-click run.bat in the project folder, and use the address that opens in your browser.</div>
+    <div class="d" style="color:var(--label2);font-size:.9375rem">This is only the app's page file. Close it and open the Audio Repair app instead (Start menu or desktop shortcut on Windows, Applications on a Mac).</div>
   </div>
   <h1 class="reveal">Repair audio</h1>
   <p class="sub reveal">Fix clicks, clipping, noise and uneven loudness in a voice recording.</p>
@@ -277,7 +277,14 @@ function enterNative() {
   api().capabilities().then(c => { if (!c.mp3) disableMp3(); if (!c.studio) disableStudio(); }).catch(() => {});
 }
 if (api()) enterNative(); else window.addEventListener('pywebviewready', enterNative);
-setTimeout(() => { if (!isHttp && !native) $('offline').hidden = false; }, 1500);   // opened as a bare file
+const inApp = !!window.__AR_NATIVE;                               // set by the desktop app before this script runs
+setTimeout(() => { if (!isHttp && !native && !inApp) $('offline').hidden = false; }, 1500);   // opened as a bare file
+if (inApp) setTimeout(() => {                                     // in the app, but its engine never connected
+  if (native) return;
+  $('offline').querySelector('.t').textContent = 'Audio Repair could not start its engine';
+  $('offline').querySelector('.d').textContent = 'Close the app and open it again. If this keeps happening, restart your computer.';
+  $('offline').hidden = false;
+}, 30000);
 
 function disableStudio() {
   $('studio').checked = false;

@@ -29,13 +29,24 @@ def _python():
 
 
 def models_dir():
-    base = os.environ.get("AR_MODELS") or (Path(os.environ.get("LOCALAPPDATA") or Path.home() / ".local" / "share")
-                                           / "AudioRepair" / "models")
-    return Path(base) / "enhancer_stage2"
+    """Shipped inside the packaged app, else the developer download folder (or AR_MODELS)."""
+    from . import ai
+    return ai.models_root() / "enhancer_stage2"
+
+
+def _has_resemble():
+    import importlib.util
+    try:
+        return importlib.util.find_spec("resemble_enhance") is not None
+    except Exception:
+        return False
 
 
 def studio_available():
-    if os.environ.get("AR_STUDIO", "1") == "0" or _python() is None:
+    from . import ai
+    if os.environ.get("AR_STUDIO", "1") == "0":
+        return False
+    if not (ai.inprocess() and _has_resemble()) and _python() is None:
         return False
     m = models_dir()
     w = m / "ds" / "G" / "default" / "mp_rank_00_model_states.pt"
@@ -49,6 +60,13 @@ def studio_enhance(audio, sr, progress=None, nfe=32, blend=0.25):
     progress(fraction 0..1) is called as the model works through the recording."""
     a = np.asarray(audio, np.float32)
     n_in = a.shape[1]
+    a = _level_for_model(a)
+    from . import ai
+    if ai.inprocess() and _has_resemble():                     # packaged app: model runs right here
+        from .studio_core import restore
+        y, ysr = restore(a.mean(axis=0), sr, models_dir(), nfe=nfe, blend=blend,
+                         progress=(lambda d, t: progress(d / max(t, 1))) if progress else None)
+        return _fit(y, ysr, sr, n_in, a.shape[0])
     py = _python()
     with tempfile.TemporaryDirectory() as td:
         i, o = os.path.join(td, "in.wav"), os.path.join(td, "out.wav")
@@ -64,9 +82,33 @@ def studio_enhance(audio, sr, progress=None, nfe=32, blend=0.25):
         if p.wait() != 0 or not os.path.exists(o):
             raise RuntimeError("Studio voice worker failed: " + err[-400:])
         y, ysr = sf.read(o, dtype="float32")
+    return _fit(y, ysr, sr, n_in, a.shape[0])
+
+
+def _level_for_model(a):
+    """The model was trained on normally levelled speech and does much worse on quiet input (for example after
+    clipping repair, which leaves ~10-15 dB of headroom). Bring the speech to about -20 dBFS RMS, peaks below 0.95.
+    Mastering sets the final level afterwards, so this gain is not undone."""
+    m = a.mean(axis=0)
+    n = 2400
+    k = len(m) // n
+    if k >= 4:
+        fr = np.sqrt(np.mean(m[:k * n].reshape(k, n) ** 2, axis=1))
+        speech = float(np.sqrt(np.mean(np.square(fr[fr >= np.percentile(fr, 50)])))) if fr.any() else 0.0
+    else:
+        speech = float(np.sqrt(np.mean(m ** 2)))
+    peak = float(np.abs(a).max())
+    if speech <= 1e-6 or peak <= 0:
+        return a
+    g = min(10 ** (-20 / 20) / speech, 0.95 / peak)
+    return (a * g).astype(np.float32)
+
+
+def _fit(y, ysr, sr, n_in, channels):
+    """Back to the input rate and length; mono restoration copied to every channel."""
     if ysr != sr:
         from math import gcd
         g = gcd(ysr, sr)
         y = resample_poly(y, sr // g, ysr // g).astype(np.float32)
     y = np.pad(y, (0, max(0, n_in - len(y))))[:n_in]
-    return np.tile(y[None, :], (a.shape[0], 1))
+    return np.tile(y[None, :], (channels, 1)).astype(np.float32)

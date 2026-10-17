@@ -161,6 +161,14 @@ def process_array(audio, sr, mode="voice", opts=None, progress=None):
     if an["too_short"]:
         say("Skipped", "repair stages (the clip is shorter than half a second)")
         order = tuple(s for s in order if s == "master")
+    if o.get("studio") and mode == "voice" and "studio" in order and studio_available():
+        # Studio voice rebuilds the whole voice. Measured on the bench, it does clearly worse when clipping repair runs
+        # before it (STOI 0.66 -> 0.54) or tone / noise stages run after it (-> 0.35), so it replaces them: only click
+        # removal and bump control (harmless in front of it) and the final mastering remain.
+        dropped = [s_ for s_ in order if s_ not in ("declick", "tame", "studio", "master")]
+        order = tuple(s_ for s_ in order if s_ in ("declick", "tame", "studio", "master"))
+        if dropped:
+            say("Skipped", "clipping repair, noise reduction and tone correction (Studio voice replaces them)")
     explicit_dereverb = "dereverb" in order
     studio_done = False
     explicit_level = "level" in order

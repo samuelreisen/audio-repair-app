@@ -8,7 +8,7 @@ recordings. It is a normal desktop app: it opens in its own window, works offlin
 
 | Your computer | File |
 |---|---|
-| Windows 10 / 11 (normal PC) | `Audio-Repair-Setup-1.0.0-x64.exe` (installer, recommended) or `Audio-Repair-Portable-1.0.0-x64.exe` (runs without installing; slower to open) |
+| Windows 10 / 11 (normal PC) | `Audio-Repair-Setup-1.0.0-x64.exe` |
 | Mac with Apple silicon (M1, M2, M3, M4...) | `Audio-Repair-1.0.0-mac-arm64.dmg` |
 | Linux (normal PC) | `Audio-Repair-1.0.0-linux-x86_64.AppImage` (any distro) or the `.tar.gz` |
 
@@ -19,7 +19,6 @@ Intel Macs and Windows on ARM are not built yet.
 - **Windows installer:** double-click it, then Next, then Install. It installs just for you (no administrator
   password), and adds Audio Repair to the Start menu and, if you tick it, the desktop. Remove it any time from
   Settings, Apps, Installed apps, Audio Repair, Uninstall.
-- **Windows portable:** put the file anywhere and double-click it. Nothing is installed.
 - **Mac:** open the `.dmg` and drag **Audio Repair** onto **Applications**.
 - **Linux:** make the AppImage executable (`chmod +x Audio-Repair-*.AppImage`, or Properties, Permissions,
   "Allow executing"), then double-click it.
@@ -48,5 +47,10 @@ The app is not signed with a paid certificate, so your system warns once:
 - Everything happens on your computer. Recordings are never uploaded anywhere, and the app opens no network
   connection.
 - Working copies are kept in your temporary folder and cleaned up automatically after an hour.
-- The installed apps use the built-in noise remover. The extra neural noise remover (DeepFilterNet) needs a
-  developer setup and is only used when running from the source folder.
+- The AI models come with the app and work offline, nothing is downloaded later:
+  - **DeepFilterNet3** removes background noise and room echo from voices. It is always used for voice recordings.
+  - **Studio voice (AI)** (Resemble Enhance) rebuilds the whole voice. It is off by default: switch it on under
+    Repairs. It is slow (roughly a minute of work per 10 seconds of audio) and can sound less natural than the
+    normal repair, so compare Before and After and keep whichever you prefer.
+- Because the AI models are included, the download is large (around 1 GB) and the installed app takes about
+  2 GB of disk space.
