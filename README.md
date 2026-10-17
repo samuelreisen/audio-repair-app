@@ -168,7 +168,7 @@ fallback to browser mode was also tested. Not tested: the macOS and Linux native
 * **macOS (.dmg) and Linux (AppImage and .tar.gz):** these cannot be built on Windows. `.github/workflows/build.yml`
   builds all three on GitHub's own Windows, macOS and Linux machines. Run it from the repository's Actions tab, or push
   a tag such as `v1.0` to attach the files to a Release. The macOS app is unsigned: right-click the app, choose Open the
-  first time (or `xattr -dr com.apple.quarantine "Audio Repair.app"`). The first builds (browser-mode version, run 39030017126) succeeded on all three; the native-window version has only been built and tested on Windows so far, and the macOS and Linux files have never been launched on a Mac or Linux machine.
+  first time (or `xattr -dr com.apple.quarantine "Audio Repair.app"`). The native-window version builds successfully on all three platforms on GitHub (run 39039245519, commit dd8c928). Each download was checked to be well-formed (zip, dmg disk-image trailer, AppImage ELF header, gzip magic). Only the Windows app has been launched; the macOS and Linux apps have never been run on a Mac or Linux machine.
 * **What the packaged app includes:** the full repair pipeline with RNNoise and M4A/MP4 decoding. The optional
   DeepFilterNet neural denoiser needs a separate Python 3.11 environment and is not bundled; the app falls back to the
   built-in denoiser automatically.
