@@ -31,7 +31,11 @@ def restore(mono, sr, run_dir, nfe=32, lambd=0.4, tau=0.5, blend=0.25, threads=N
 
     progress(done, total) is called after every 10-second chunk."""
     import torch
+    from resemble_enhance.enhancer import enhancer as _enhancer_module
     from resemble_enhance.enhancer.inference import load_enhancer
+    # Loading logs a parameter table via pandas.to_markdown, which needs an optional package whose version a packaged
+    # app cannot always read. The table is only a log message, so skip it.
+    _enhancer_module.Enhancer.summarize = lambda self: ""
     from resemble_enhance.inference import inference_chunk, merge_chunks, remove_weight_norm_recursively
 
     with _lock:

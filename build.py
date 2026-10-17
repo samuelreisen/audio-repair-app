@@ -59,7 +59,7 @@ def main():
         if not models or not (Path(models) / "DeepFilterNet3" / "config.ini").exists()                 or not (Path(models) / "enhancer_stage2" / "hparams.yaml").exists():
             sys.exit("AI build needs AUDIO_REPAIR_MODELS pointing at a folder with DeepFilterNet3/ and enhancer_stage2/")
         args += ["--collect-all", "df", "--collect-all", "libdf", "--collect-all", "resemble_enhance",
-                 "--collect-submodules", "torchaudio", "--hidden-import", "pipeline.ai", "--hidden-import",
+                 "--collect-submodules", "torchaudio", "--copy-metadata", "tabulate", "--hidden-import", "pipeline.ai", "--hidden-import",
                  "pipeline.studio_core", "--add-data", f"{models}{sep}models"]
         print("AI build: PyTorch + DeepFilterNet3 + Studio voice, models from", models)
     else:
