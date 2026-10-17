@@ -3,17 +3,20 @@
 Desktop app that fixes clicks, clipping, background noise, room reverb, poor mic tone and loudness in recordings.
 Everything runs offline on the CPU.
 
-**To install the app, see [INSTALL.md](INSTALL.md).** The installers are built on GitHub
+**To install the app, see [INSTALL.md](INSTALL.md).** **How the app is made (for Claude or a developer): [HANDOFF.md](HANDOFF.md)**, read it first. The installers are built on GitHub
 (Actions tab, "Build desktop apps"): `Audio Repair - Windows Installer.exe` and `Audio Repair - Mac Installer.dmg`.
 
 ## Project layout
 | Path | What it is |
 |---|---|
 | `desktop.py` | The app: native window (pywebview), talks to the engine directly, no server |
+| `app_updates.py` | Updates (`.srar` files, "marks" Mk II, Mk III, ...) and keeping HANDOFF.md up to date |
 | `engine.py` | Runs repair jobs in the background for the window |
 | `pipeline/` | The audio repair stages (below) and the AI models (`ai.py`, `dfn.py`, `studio*.py`) |
 | `static/index.html` | The app's interface |
 | `build.py`, `installer.iss`, `assets/` | Packaging: PyInstaller build, Windows installer, app icon |
+| `tools/make_update.py`, `updates/`, `mark.json` | Making the next `.srar` update; the update history; the built-in mark |
+| `HANDOFF.md` | How the app is made and everything done to it; ships with the app and with every update |
 | `.github/workflows/build.yml` | Builds the Windows and Mac installers on GitHub |
 | `app.py`, `launcher.py` | Browser-mode fallback, used only if the native window cannot start |
 | `run.bat`, `setup_neural.bat` | Developer setup: run from source on Windows |
@@ -157,6 +160,12 @@ voice (one file stayed at -25 LUFS). Two stages now run first:
 Result on the two recordings: both now land at -16.0 LUFS / -1.0 dBTP (josh6 was stuck at -25.1), with 58 + 6 and
 40 + 6 clicks / bangs repaired. M4A / MP4 / AAC input is decoded with PyAV, so ffmpeg is not required.
 Try your own with `bench\process_samples.py` (outputs in `samples\out\`).
+
+## Updates (.srar)
+`python tools/make_update.py --title "..." --notes "..."` makes the next update, `updates/out/Audio Repair - Mk <N>
+update.srar`, and adds its entry to HANDOFF.md. Users double-click it (or drop it on the window, or use Updates in the
+app) to install it. An update replaces the page, `engine.py` and `pipeline/`; anything else needs a new installer.
+Details: HANDOFF.md, section 9.
 
 ## Desktop app
 `desktop.py` shows the interface in its own native window (WebView2 on Windows, the system web view on macOS) and

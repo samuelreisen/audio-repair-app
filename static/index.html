@@ -157,6 +157,19 @@
   .saved { margin-top: 10px; font-size: .9375rem; color: var(--green-text); word-break: break-all; }
   .saved:empty { display: none; }
 
+  /* Updates */
+  .ver { color: var(--label2); font-size: .9375rem; white-space: nowrap; }
+  .btn.small { min-height: 34px; padding: 0 16px; font-size: .9375rem; }
+  #upd-panel .t { font-weight: 600; }
+  #upd-notes { margin-top: 6px; font-size: .9375rem; color: var(--label2); white-space: pre-line; }
+  #upd-notes:empty { display: none; }
+  #upd-msg { margin-top: 10px; font-size: .9375rem; color: var(--green-text); }
+  #upd-msg.bad { color: var(--red-text); }
+  #upd-msg:empty { display: none; }
+  .btns { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+  .btns .btn { flex: 1 1 140px; }
+  .notice { font-size: .9375rem; color: var(--red-text); }
+
   /* Entry reveal: plays when scrolled into view and again from either direction */
   @media (prefers-reduced-motion: no-preference) {
     .js .reveal { opacity: 0; transform: translateY(12px); transition: opacity 450ms var(--ease), transform 450ms var(--ease); }
@@ -256,6 +269,30 @@
     <div class="head">What was done</div>
     <div class="group"><ul id="report"></ul></div>
   </section>
+
+  <section id="updates" hidden>
+    <div class="head">Updates</div>
+    <div class="group" id="upd-panel" hidden style="margin-bottom:12px">
+      <div class="pad">
+        <div class="t" id="upd-title"></div>
+        <div class="d" id="upd-sub" style="color:var(--label2);font-size:.9375rem"></div>
+        <div id="upd-notes"></div>
+        <div id="upd-msg" aria-live="polite"></div>
+        <div class="btns">
+          <button type="button" class="btn prominent" id="upd-install">Install</button>
+          <button type="button" class="btn prominent" id="upd-restart" hidden>Restart now</button>
+          <button type="button" class="btn" id="upd-close">Cancel</button>
+        </div>
+      </div>
+    </div>
+    <div class="group">
+      <div class="row"><span><span class="t">Version</span><span class="d" id="verd"></span></span><span class="ver" id="ver"></span></div>
+      <div class="row" id="upd-notice-row" hidden><span class="notice" id="upd-notice"></span></div>
+      <div class="row"><span><span class="t">Install an update</span><span class="d">Open a .srar update file, or drop one on this window</span></span>
+        <button type="button" class="btn small" id="upd-choose">Choose…</button></div>
+      <div id="upd-list"></div>
+    </div>
+  </section>
 </main>
 
 <script>
@@ -275,6 +312,8 @@ function enterNative() {
   $('dl').textContent = 'Save repaired file';
   $('dl').setAttribute('role', 'button'); $('dl').tabIndex = 0;
   api().capabilities().then(c => { if (!c.mp3) disableMp3(); if (!c.studio) disableStudio(); }).catch(() => {});
+  $('updates').hidden = false;
+  loadUpdates();
 }
 if (api()) enterNative(); else window.addEventListener('pywebviewready', enterNative);
 const inApp = !!window.__AR_NATIVE;                               // set by the desktop app before this script runs
@@ -470,6 +509,81 @@ async function saveResult(e) {
 }
 $('dl').onclick = saveResult;
 $('dl').onkeydown = e => { if (native && (e.key === 'Enter' || e.key === ' ')) saveResult(e); };
+
+/* Updates: .srar files install a newer version of the app's page and audio engine ("marks": Mk II, Mk III, ...). */
+async function loadUpdates() {
+  const s = await api().updates_status();
+  $('ver').textContent = s.running.name;
+  $('verd').textContent = 'Audio Repair ' + s.app_version + (s.active ? ', with an installed update' : ', as installed');
+  $('upd-notice').textContent = s.notice || '';
+  $('upd-notice-row').hidden = !s.notice;
+  const list = $('upd-list');
+  list.textContent = '';
+  const versions = [Object.assign({ builtIn: true }, s.bundled)].concat(s.installed);
+  for (const v of versions.sort((a, b) => b.mark - a.mark)) {
+    if (v.mark === s.running.mark) continue;
+    const row = document.createElement('div'); row.className = 'row';
+    const left = document.createElement('span');
+    const t = document.createElement('span'); t.className = 't'; t.textContent = v.name + (v.builtIn ? ' (built in)' : '');
+    const d = document.createElement('span'); d.className = 'd'; d.textContent = v.title || '';
+    left.append(t, d);
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'btn small'; b.textContent = 'Use';
+    b.onclick = async () => {
+      const r = await api().switch_version(v.builtIn ? 0 : v.mark);
+      offer({ ok: true, switched: true, name: v.name, title: v.title }, r.error);
+    };
+    row.append(left, b);
+    list.appendChild(row);
+  }
+}
+let pendingUpdate = null;
+function offer(info, err) {
+  const panel = $('upd-panel'), msg = $('upd-msg');
+  pendingUpdate = info && info.ok && !info.switched ? info : null;
+  msg.textContent = ''; msg.classList.remove('bad');
+  $('upd-restart').hidden = true;
+  $('upd-close').textContent = 'Cancel';
+  if (info && info.switched) {                         // "Use" on another installed version
+    $('upd-title').textContent = 'Switch to ' + info.name;
+    $('upd-sub').textContent = info.title || '';
+    $('upd-notes').textContent = '';
+    $('upd-install').hidden = true;
+    if (err) { msg.textContent = err; msg.classList.add('bad'); }
+    else { msg.textContent = 'Restart Audio Repair to use ' + info.name + '.'; $('upd-restart').hidden = false; $('upd-close').textContent = 'Later'; }
+  } else if (!info || !info.ok) {
+    $('upd-title').textContent = 'This update cannot be installed';
+    $('upd-sub').textContent = info ? info.file || '' : '';
+    $('upd-notes').textContent = '';
+    msg.textContent = (info && info.error) || 'The file could not be read.'; msg.classList.add('bad');
+    $('upd-install').hidden = true;
+    $('upd-close').textContent = 'Close';
+  } else {
+    $('upd-title').textContent = info.reinstall ? 'Install ' + info.name + ' again?' : 'Install ' + info.name + '?';
+    $('upd-sub').textContent = [info.title, info.created].filter(Boolean).join(', ');
+    $('upd-notes').textContent = (info.notes || '') + (info.older ? (info.notes ? '\n\n' : '') +
+      'This is older than the version you use now. It will be installed, and you can switch to it below.' : '');
+    $('upd-install').hidden = false;
+    $('upd-install').disabled = false;
+  }
+  show(panel);
+  panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+window.__updateFile = info => { $('updates').hidden = false; offer(info); };
+$('upd-choose').onclick = async () => { const info = await api().pick_update(); if (info) offer(info); };
+$('upd-close').onclick = () => { $('upd-panel').hidden = true; pendingUpdate = null; };
+$('upd-restart').onclick = () => api().restart();
+$('upd-install').onclick = async () => {
+  if (!pendingUpdate) return;
+  $('upd-install').disabled = true;
+  const r = await api().install_update(pendingUpdate.path), msg = $('upd-msg');
+  pendingUpdate = null;
+  $('upd-install').hidden = true;
+  if (r.error) { msg.textContent = r.error; msg.classList.add('bad'); $('upd-close').textContent = 'Close'; return; }
+  msg.textContent = r.switched ? r.name + ' is installed. Restart Audio Repair to use it.' : r.name + ' is installed.';
+  $('upd-restart').hidden = !r.switched;
+  $('upd-close').textContent = r.switched ? 'Later' : 'Close';
+  loadUpdates();
+};
 </script>
 </body>
 </html>

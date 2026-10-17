@@ -10,7 +10,7 @@ on:
     tags: ["v*"]
 
 env:
-  APP_VERSION: "1.0.0"
+  APP_VERSION: "1.1.0"
 
 jobs:
   build:
@@ -94,6 +94,7 @@ jobs:
           mkdir dmg
           cp -R "dist/Audio Repair.app" dmg/
           ln -s /Applications dmg/Applications
+          cp HANDOFF.md dmg/             # how the app is made; the app keeps its own copy up to date
           hdiutil create -volname "Audio Repair" -srcfolder dmg -ov -format UDZO "Audio Repair - Mac Installer.dmg"
 
       - uses: actions/upload-artifact@v4
@@ -102,6 +103,7 @@ jobs:
           path: |
             Audio Repair - Windows Installer.exe
             Audio Repair - Mac Installer.dmg
+            HANDOFF.md
           if-no-files-found: error
 
       - name: Attach to release
@@ -111,3 +113,4 @@ jobs:
           files: |
             Audio Repair - Windows Installer.exe
             Audio Repair - Mac Installer.dmg
+            HANDOFF.md

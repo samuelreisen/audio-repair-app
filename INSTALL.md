@@ -38,6 +38,18 @@ The app is not signed with a paid certificate, so your computer warns once:
 5. Compare **Before** and **After**, read **What was done**, then click **Save repaired file** and choose where to
    save it. Your original is never changed.
 
+## Updates
+
+Updates come as one file named like `Audio Repair - Mk II update.srar`. To install one:
+
+1. Double-click the `.srar` file (or drop it onto the Audio Repair window, or scroll to **Updates** in the app and
+   click **Choose…**).
+2. Read what the update changes, then click **Install**, then **Restart now**.
+
+**Updates** at the bottom of the app shows which version you are using (Mk I, Mk II, ...). Earlier versions stay
+installed: click **Use** next to one to go back to it. An update never changes your recordings or the installed
+program; you can uninstall the app as usual at any time.
+
 ## Good to know
 
 - Everything happens on your computer. Recordings are never uploaded anywhere.

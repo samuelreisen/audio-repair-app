@@ -16,7 +16,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 NAME = "Audio Repair"
-VERSION = "1.0.0"
+VERSION = "1.1.0"            # keep equal to app_updates.APP_VERSION
 
 
 def find_rnnoise():
@@ -32,6 +32,25 @@ def find_rnnoise():
     return None
 
 
+def register_mac_file_type(app):
+    """Tell macOS that Audio Repair opens .srar update files, then re-sign the bundle (ad hoc) after the change."""
+    import plistlib
+    plist = app / "Contents" / "Info.plist"
+    with open(plist, "rb") as f:
+        info = plistlib.load(f)
+    uti = "com.audiorepair.update"
+    info["CFBundleShortVersionString"] = VERSION
+    info["CFBundleDocumentTypes"] = [{"CFBundleTypeName": "Audio Repair update", "CFBundleTypeRole": "Editor",
+                                      "LSHandlerRank": "Owner", "LSItemContentTypes": [uti],
+                                      "CFBundleTypeExtensions": ["srar"]}]
+    info["UTExportedTypeDeclarations"] = [{"UTTypeIdentifier": uti, "UTTypeDescription": "Audio Repair update",
+                                           "UTTypeConformsTo": ["public.data"],
+                                           "UTTypeTagSpecification": {"public.filename-extension": ["srar"]}}]
+    with open(plist, "wb") as f:
+        plistlib.dump(info, f)
+    subprocess.run(["codesign", "--force", "--deep", "--sign", "-", str(app)], check=True)
+
+
 def main():
     sep = os.pathsep
     # Build outside the project folder: if it lives in OneDrive / Dropbox, the sync client locks the build's
@@ -41,6 +60,8 @@ def main():
     args = [sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--name", NAME, "--windowed",
             "--distpath", str(scratch / "dist"), "--workpath", str(scratch / "work"), "--specpath", str(scratch),
             "--add-data", f"{ROOT / 'static'}{sep}static",
+            "--add-data", f"{ROOT / 'mark.json'}{sep}.",          # which mark is built in (updates)
+            "--add-data", f"{ROOT / 'HANDOFF.md'}{sep}.",         # how the app is made, kept up to date by updates
             "--collect-all", "av",
             "--collect-submodules", "uvicorn",
             "--collect-submodules", "pipeline",
@@ -69,7 +90,9 @@ def main():
     if sys.platform == "win32":                         # Windows window = WebView2 through pythonnet
         args += ["--collect-all", "clr_loader", "--collect-all", "pythonnet", "--icon", str(ROOT / "assets" / "icon.ico")]
     elif sys.platform == "darwin":
-        args += ["--icon", str(ROOT / "assets" / "icon.png"), "--osx-bundle-identifier", "com.audiorepair.app"]
+        # --argv-emulation: a double-clicked .srar update arrives as a command-line argument
+        args += ["--icon", str(ROOT / "assets" / "icon.png"), "--osx-bundle-identifier", "com.audiorepair.app",
+                 "--argv-emulation"]
     onefile = os.environ.get("AUDIO_REPAIR_ONEFILE") == "1"   # one self-contained .exe ("portable"), slower to start
     if onefile:
         args.append("--onefile")
@@ -91,6 +114,8 @@ def main():
         built = scratch / "dist" / (NAME + (".app" if sys.platform == "darwin" else ""))
         out = ROOT / "dist" / built.name
         shutil.rmtree(out, ignore_errors=True)
+        if sys.platform == "darwin":
+            register_mac_file_type(built)
         shutil.copytree(built, out, symlinks=True, dirs_exist_ok=True)   # tolerate files a sync client still holds
     print("built:", out, "exists:", out.exists())
 

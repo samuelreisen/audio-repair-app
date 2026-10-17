@@ -16,3 +16,4 @@ build_log.txt
 work_server.log
 .claude/
 build_ai_log.txt
+updates/out/
