@@ -1,0 +1,22 @@
+fastapi
+uvicorn
+python-multipart
+numpy
+scipy
+soundfile
+pyloudnorm
+pytest
+httpx
+
+# Optional, recommended: the RNNoise neural speech-noise model used by the denoiser (voice mode, 48 kHz).
+# The pipeline falls back to its classical estimator when it is missing.  Install it WITHOUT dependencies
+# (only the bundled rnnoise.dll is used, loaded through ctypes - none of its other requirements are needed):
+#     .venv\Scripts\python.exe -m pip install --no-deps pyrnnoise
+# pyrnnoise==0.4.5  (already installed in this project's .venv)
+
+# Benchmark / diagnostics only (bench\run_bench.py, spectrogram plots) - not needed by the app:
+# pystoi
+# matplotlib
+
+# No longer used (replaced by the in-house declip / denoise / master modules): noisereduce, pedalboard
+av

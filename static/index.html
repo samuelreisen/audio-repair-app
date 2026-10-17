@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Audio Repair</title>
+<style>
+  /* Tokens follow Apple's Human Interface Guidelines: system colours, iOS text styles, 44 px targets,
+     inset grouped lists. Light and dark follow the system; increased contrast is honoured. */
+  :root {
+    --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+    --accent: rgb(0 136 255);
+    --accent-text: rgb(30 110 244);
+    --on-accent: #fff;
+    --green-text: rgb(0 137 50);
+    --red-text: rgb(233 21 45);
+    --bg: rgb(242 242 247);              /* grouped background */
+    --group: #ffffff;                    /* grouped row background */
+    --label: #000000;
+    --label2: rgb(60 60 67 / .6);
+    --label3: rgb(60 60 67 / .3);
+    --fill: rgb(118 118 128 / .12);
+    --fill-strong: rgb(120 120 128 / .2);
+    --separator: rgb(60 60 67 / .29);
+    --glass: rgb(255 255 255 / .72);
+    --glass-border: rgb(0 0 0 / .06);
+    --ease: cubic-bezier(0.32, 0.72, 0, 1);
+    --target: 44px;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --accent: rgb(0 145 255);
+      --accent-text: rgb(92 184 255);
+      --green-text: rgb(74 217 104);
+      --red-text: rgb(255 97 101);
+      --bg: #000000;
+      --group: rgb(28 28 30);
+      --label: #ffffff;
+      --label2: rgb(235 235 245 / .6);
+      --label3: rgb(235 235 245 / .3);
+      --fill: rgb(118 118 128 / .24);
+      --fill-strong: rgb(120 120 128 / .36);
+      --separator: rgb(84 84 88 / .6);
+      --glass: rgb(30 30 32 / .62);
+      --glass-border: rgb(255 255 255 / .1);
+    }
+  }
+  @media (prefers-contrast: more) {
+    :root { --accent: var(--accent-text); --label2: rgb(60 60 67 / .85); --separator: rgb(60 60 67 / .6); }
+  }
+  @media (prefers-contrast: more) and (prefers-color-scheme: dark) {
+    :root { --label2: rgb(235 235 245 / .85); --separator: rgb(235 235 245 / .5); }
+  }
+
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; min-height: 100dvh; background: var(--bg); color: var(--label);
+    font: 1.0625rem/1.47 var(--font); letter-spacing: -0.01em; -webkit-font-smoothing: antialiased;
+  }
+
+  /* Control layer: translucent top bar, content scrolls under it */
+  .bar-top {
+    position: sticky; top: 0; z-index: 10; display: flex; align-items: center; justify-content: center;
+    min-height: 52px; padding-inline: 16px; background: var(--glass); border-bottom: .5px solid var(--glass-border);
+    -webkit-backdrop-filter: blur(20px) saturate(180%); backdrop-filter: blur(20px) saturate(180%);
+    font-weight: 600; font-size: 1.0625rem;
+  }
+  .bar-top small { position: absolute; inset-inline-end: 16px; font-weight: 400; font-size: .8125rem; color: var(--label2); }
+  @media (max-width: 560px) { .bar-top small { display: none; } }
+  @media (prefers-reduced-transparency: reduce) { .bar-top { background: var(--group); -webkit-backdrop-filter: none; backdrop-filter: none; } }
+
+  main { max-width: 680px; margin-inline: auto; padding: 24px 16px 96px; }
+  h1 { margin: 8px 0 4px; font-size: 2.125rem; line-height: 1.2; font-weight: 700; letter-spacing: .01em; }
+  .sub { margin: 0 0 28px; color: var(--label2); }
+
+  /* Inset grouped lists */
+  .head { margin: 28px 0 8px; padding-inline: 16px; font-size: .8125rem; color: var(--label2); }
+  .group { background: var(--group); border-radius: 20px; overflow: hidden; }
+  .row { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: var(--target); padding: 10px 16px; }
+  .row + .row::before { content: ""; position: absolute; top: 0; inset-inline: 16px 0; border-top: .5px solid var(--separator); }
+  label.row { cursor: pointer; }
+  .row .t { display: block; font-size: 1.0625rem; }
+  .row .d { display: block; font-size: .8125rem; color: var(--label2); line-height: 1.35; }
+
+  /* File chooser */
+  #drop { display: grid; justify-items: center; gap: 4px; padding: 32px 16px; text-align: center; border-radius: 20px; }
+  @media (prefers-reduced-motion: no-preference) { #drop { transition: background 300ms var(--ease); } }
+  #drop.over { background: var(--fill); }
+  #drop strong { font-size: 1.0625rem; font-weight: 600; }
+  #drop .d { font-size: .8125rem; color: var(--label2); margin-bottom: 12px; }
+  #fname { padding: 0 16px 16px; text-align: center; font-size: .9375rem; color: var(--green-text); font-weight: 500; word-break: break-word; }
+  #fname:empty { display: none; }
+
+  /* Buttons */
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: var(--target); min-width: var(--target);
+         padding: 0 20px; border: 0; border-radius: 999px; font: 600 1.0625rem/1 var(--font); letter-spacing: -0.01em;
+         background: var(--fill); color: var(--accent-text); cursor: pointer; text-decoration: none; }
+  .btn.prominent { background: var(--accent); color: var(--on-accent); width: 100%; }
+  .btn:disabled { opacity: .4; cursor: default; }
+  .btn:focus-visible, .seg input:focus-visible + span, .switch:focus-visible, input[type=range]:focus-visible, #drop:focus-visible {
+    outline: 3px solid var(--accent); outline-offset: 2px; }
+  @media (prefers-reduced-motion: no-preference) {
+    .btn { transition: transform 180ms var(--ease), filter 180ms var(--ease); }
+  }
+  .btn:active:not(:disabled) { transform: scale(.97); filter: brightness(.92); }
+  .go { margin-top: 28px; }
+
+  /* Segmented control */
+  .seg { display: inline-flex; padding: 2px; border-radius: 9px; background: var(--fill); }
+  .seg label { cursor: pointer; }
+  .seg input { position: absolute; opacity: 0; pointer-events: none; }
+  .seg span { display: block; min-width: 72px; padding: 6px 14px; border-radius: 7px; text-align: center; font-size: .9375rem; font-weight: 500; }
+  .seg input:checked + span { background: var(--group); box-shadow: 0 1px 3px rgb(0 0 0 / .18); font-weight: 600; }
+  .seg input:disabled + span { opacity: .4; cursor: not-allowed; }
+  @media (prefers-color-scheme: dark) { .seg input:checked + span { background: rgb(99 99 102); } }
+
+  /* Toggle switch */
+  .switch { -webkit-appearance: none; appearance: none; flex: none; position: relative; width: 51px; height: 31px; margin: 0;
+            border-radius: 999px; background: var(--fill-strong); cursor: pointer; }
+  .switch::after { content: ""; position: absolute; top: 2px; inset-inline-start: 2px; width: 27px; height: 27px; border-radius: 50%;
+                   background: #fff; box-shadow: 0 2px 4px rgb(0 0 0 / .25); }
+  .switch:checked { background: rgb(52 199 89); }
+  .switch:checked::after { transform: translateX(20px); }
+  @media (prefers-reduced-motion: no-preference) {
+    .switch, .switch::after { transition: transform 300ms var(--ease), background 300ms var(--ease); }
+  }
+  .switch:disabled { opacity: .4; cursor: default; }
+
+  /* Slider */
+  .slider-row { flex-direction: column; align-items: stretch; gap: 0; }
+  .slider-row .top { display: flex; justify-content: space-between; color: var(--label2); font-size: .9375rem; }
+  input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 4px; margin: 14px 0; border-radius: 4px; background: var(--fill-strong); }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 28px; height: 28px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgb(0 0 0 / .35); cursor: pointer; }
+  input[type=range]::-moz-range-thumb { width: 28px; height: 28px; border: 0; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgb(0 0 0 / .35); cursor: pointer; }
+  input[type=range]:disabled { opacity: .4; }
+
+  /* Progress and result */
+  .pad { padding: 16px; }
+  #msg { font-weight: 600; }
+  .progress { height: 4px; border-radius: 4px; background: var(--fill-strong); overflow: hidden; margin-top: 12px; }
+  .progress i { display: block; height: 100%; width: 100%; background: var(--accent); transform-origin: left; transform: scaleX(0); }
+  @media (prefers-reduced-motion: no-preference) { .progress i { transition: transform 600ms var(--ease); } }
+  #err { margin-top: 12px; font-size: .9375rem; color: var(--red-text); }
+  #err:empty { display: none; }
+  .clip { display: grid; gap: 8px; padding: 16px; }
+  .clip + .clip { border-top: .5px solid var(--separator); }
+  .clip .t { font-weight: 600; }
+  canvas.wave { display: block; width: 100%; height: 56px; border-radius: 10px; background: var(--fill); }
+  audio { display: block; width: 100%; height: 40px; }
+  #report { margin: 0; padding: 0; list-style: none; }
+  #report li { position: relative; min-height: var(--target); padding: 10px 16px; font-size: .9375rem; display: flex; align-items: center; }
+  #report li + li::before { content: ""; position: absolute; top: 0; inset-inline: 16px 0; border-top: .5px solid var(--separator); }
+  .dlwrap { padding: 16px; border-top: .5px solid var(--separator); }
+
+  /* Entry reveal: plays when scrolled into view and again from either direction */
+  @media (prefers-reduced-motion: no-preference) {
+    .js .reveal { opacity: 0; transform: translateY(12px); transition: opacity 450ms var(--ease), transform 450ms var(--ease); }
+    .js .reveal.above { transform: translateY(-12px); }
+    .js .reveal.in { opacity: 1; transform: none; }
+  }
+</style>
+<script>document.documentElement.classList.add('js');</script>
+</head>
+<body>
+
+<header class="bar-top">Audio Repair <small>Runs on this computer</small></header>
+
+<main>
+  <div id="offline" class="group pad" hidden style="margin-bottom:20px">
+    <div class="t" style="font-weight:600">The app is not running</div>
+    <div class="d" style="color:var(--label2);font-size:.9375rem">This page only works when it is opened by the app. Close it, double-click run.bat in the project folder, and use the address that opens in your browser.</div>
+  </div>
+  <h1 class="reveal">Repair audio</h1>
+  <p class="sub reveal">Fix clicks, clipping, noise and uneven loudness in a voice recording.</p>
+
+  <div class="head reveal">Recording</div>
+  <div class="group reveal">
+    <div id="drop" tabindex="0" role="button" aria-label="Choose an audio file">
+      <strong>Drop an audio file here</strong>
+      <span class="d">WAV, MP3, FLAC, OGG or M4A</span>
+      <button type="button" class="btn" id="choose">Choose file</button>
+      <input id="file" type="file" accept="audio/*,.m4a,.mp3,.wav,.flac,.ogg,.aac,.mp4" hidden>
+    </div>
+    <div id="fname"></div>
+  </div>
+
+  <div class="head reveal">Settings</div>
+  <div class="group reveal">
+    <div class="row">
+      <span class="t">Content</span>
+      <div class="seg" role="radiogroup" aria-label="Content type">
+        <label><input type="radio" name="mode" value="voice" checked><span>Voice</span></label>
+        <label><input type="radio" name="mode" value="music"><span>Music</span></label>
+      </div>
+    </div>
+    <div class="row">
+      <span class="t">Save as</span>
+      <div class="seg" role="radiogroup" aria-label="Output format">
+        <label><input type="radio" name="fmt" value="wav" checked><span>WAV</span></label>
+        <label><input type="radio" name="fmt" value="mp3"><span>MP3</span></label>
+      </div>
+    </div>
+  </div>
+
+  <div class="head reveal">Repairs</div>
+  <div class="group reveal">
+    <label class="row"><span><span class="t">Remove clicks</span><span class="d">Pops, crackle and mouth clicks</span></span>
+      <input class="switch" type="checkbox" id="declick" role="switch" checked></label>
+    <label class="row"><span><span class="t">Tame bumps</span><span class="d">Knocks and bangs far louder than the voice</span></span>
+      <input class="switch" type="checkbox" id="tame" role="switch" checked></label>
+    <label class="row"><span><span class="t">Fix clipping</span><span class="d">Rebuild flattened, distorted peaks</span></span>
+      <input class="switch" type="checkbox" id="declip" role="switch" checked></label>
+    <label class="row"><span><span class="t">Reduce noise</span><span class="d">Hiss, hum and room echo</span></span>
+      <input class="switch" type="checkbox" id="denoise" role="switch" checked></label>
+    <label class="row"><span><span class="t">Improve tone</span><span class="d">Muddy, boxy or thin microphone sound</span></span>
+      <input class="switch" type="checkbox" id="eq" role="switch" checked></label>
+    <label class="row"><span><span class="t">Even out loudness</span><span class="d">A consistent level with safe peaks</span></span>
+      <input class="switch" type="checkbox" id="master" role="switch" checked></label>
+  </div>
+
+  <div class="head reveal">Noise reduction</div>
+  <div class="group reveal">
+    <label class="row"><span><span class="t">Choose automatically</span><span class="d">Recommended. Adjusts to how noisy the recording is</span></span>
+      <input class="switch" type="checkbox" id="auto" role="switch" checked></label>
+    <div class="row slider-row">
+      <div class="top"><span>Strength</span><span id="sval">Automatic</span></div>
+      <input id="strength" type="range" min="0" max="1" step="0.05" value="0.8" aria-label="Noise reduction strength" disabled>
+    </div>
+  </div>
+
+  <button id="go" class="btn prominent go reveal" disabled>Repair audio</button>
+
+  <section id="prog" hidden>
+    <div class="head">Repairing</div>
+    <div class="group pad">
+      <div id="msg" aria-live="polite">Starting</div>
+      <div class="progress"><i id="bar"></i></div>
+      <div id="err" role="alert"></div>
+    </div>
+  </section>
+
+  <section id="result" hidden>
+    <div class="head">Result</div>
+    <div class="group">
+      <div class="clip"><span class="t">Before</span><canvas id="wo" class="wave" aria-hidden="true"></canvas><audio id="orig" controls></audio></div>
+      <div class="clip"><span class="t">After</span><canvas id="wf" class="wave" aria-hidden="true"></canvas><audio id="fixed" controls></audio></div>
+      <div class="dlwrap"><a id="dl" class="btn prominent">Download repaired file</a></div>
+    </div>
+    <div class="head">What was done</div>
+    <div class="group"><ul id="report"></ul></div>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+let file = null, busy = false, origUrl = null;
+const drop = $('drop'), input = $('file');
+const offline = !location.protocol.startsWith('http');
+if (offline) $('offline').hidden = false;
+
+/* Reveals play on enter and reverse on exit, so they replay from either scroll direction. */
+const io = 'IntersectionObserver' in window ? new IntersectionObserver(es => {
+  es.forEach(e => {
+    const t = e.target;
+    if (e.isIntersecting) { t.classList.add('in'); t.classList.remove('above'); }
+    else { t.classList.remove('in'); t.classList.toggle('above', e.boundingClientRect.top < 0); }
+  });
+}, { threshold: 0.05 }) : null;
+function reveal(el) { if (io) io.observe(el); else el.classList.add('in'); }
+document.querySelectorAll('.reveal').forEach(reveal);
+
+function setFile(f) {
+  if (busy || offline) return;                                   // never swap the file under a running job
+  file = f || null;
+  $('fname').textContent = file ? file.name : '';
+  $('go').disabled = !file;
+}
+async function errText(r) {
+  try { const j = await r.json(); return typeof j.detail === 'string' ? j.detail : 'The request failed. Try again.'; }
+  catch { return 'The request failed. Try again.'; }
+}
+fetch('/capabilities').then(r => r.json()).then(c => {
+  if (!c.mp3) {
+    const m = document.querySelector('input[name=fmt][value=mp3]');
+    m.disabled = true;
+    m.parentElement.title = 'MP3 export needs ffmpeg (winget install ffmpeg)';
+  }
+}).catch(() => {});
+
+$('choose').onclick = e => { e.stopPropagation(); input.click(); };
+drop.onclick = () => input.click();
+drop.onkeydown = e => { if (e.target === drop && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); input.click(); } };
+input.onchange = () => setFile(input.files[0]);
+drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
+drop.ondragleave = () => drop.classList.remove('over');
+drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); setFile(e.dataTransfer.files[0]); };
+
+function syncStrength() {
+  const auto = $('auto').checked;
+  $('strength').disabled = auto;
+  $('sval').textContent = auto ? 'Automatic' : Math.round($('strength').value * 100) + '%';
+}
+$('strength').oninput = syncStrength;
+$('auto').onchange = syncStrength;
+
+function show(el) { el.hidden = false; el.classList.add('reveal'); requestAnimationFrame(() => reveal(el)); }
+
+/* Draw the real waveform of the audio (peak per bar). Silently skipped if the browser cannot decode it. */
+async function drawWave(canvas, arrayBuffer) {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const buf = await ctx.decodeAudioData(arrayBuffer);
+    ctx.close();
+    const d = buf.getChannelData(0), W = canvas.clientWidth, H = canvas.clientHeight, dpr = window.devicePixelRatio || 1;
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    const g = canvas.getContext('2d'); g.scale(dpr, dpr);
+    const bars = Math.floor(W / 4), step = Math.floor(d.length / bars) || 1;
+    g.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+    for (let i = 0; i < bars; i++) {
+      let p = 0;
+      for (let j = i * step; j < (i + 1) * step && j < d.length; j += 8) p = Math.max(p, Math.abs(d[j]));
+      const h = Math.max(2, p * (H - 8));
+      g.beginPath(); g.roundRect(i * 4, (H - h) / 2, 2.5, h, 1.25); g.fill();
+    }
+  } catch (e) { canvas.hidden = true; }
+}
+
+$('go').onclick = async () => {
+  if (busy || !file) return;
+  busy = true;
+  const sent = file;                                   // the file this job was started with
+  $('go').disabled = true;
+  $('result').hidden = true;
+  $('err').textContent = '';
+  show($('prog'));
+  $('msg').textContent = 'Uploading';
+  $('bar').style.transform = 'scaleX(0)';
+  const fd = new FormData();
+  fd.append('file', sent);
+  fd.append('mode', document.querySelector('input[name=mode]:checked').value);
+  fd.append('fmt', document.querySelector('input[name=fmt]:checked').value);
+  for (const k of ['declick', 'tame', 'declip', 'denoise', 'eq', 'master']) fd.append(k, $(k).checked);
+  if (!$('auto').checked) fd.append('denoise_strength', $('strength').value);   // absent = automatic
+  try {
+    const r = await fetch('/process', { method: 'POST', body: fd });
+    if (!r.ok) throw new Error(await errText(r));
+    const { id } = await r.json();
+    let lines = [];
+    while (true) {
+      await new Promise(r => setTimeout(r, 700));
+      const pr = await fetch('/status/' + id);
+      if (!pr.ok) throw new Error(await errText(pr));
+      const s = await pr.json();
+      if (s.state === 'error') { $('msg').textContent = 'This file could not be repaired'; throw new Error(s.message); }
+      $('msg').textContent = s.message;
+      $('bar').style.transform = 'scaleX(' + s.progress + ')';
+      if (s.state === 'done') { lines = s.report || []; break; }
+    }
+    const ul = $('report');
+    ul.textContent = '';
+    for (const l of lines) { const li = document.createElement('li'); li.textContent = l; ul.appendChild(li); }
+    if (origUrl) URL.revokeObjectURL(origUrl);
+    origUrl = URL.createObjectURL(sent);
+    $('orig').src = origUrl;
+    $('fixed').src = '/download/' + id;
+    $('dl').href = '/download/' + id;
+    show($('result'));
+    $('wo').hidden = $('wf').hidden = false;
+    sent.arrayBuffer().then(b => drawWave($('wo'), b));
+    fetch('/download/' + id).then(x => x.arrayBuffer()).then(b => drawWave($('wf'), b)).catch(() => { $('wf').hidden = true; });
+    $('result').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  } catch (e) {
+    $('err').textContent = e.message || 'Something went wrong. Try again.';
+  }
+  busy = false;
+  $('go').disabled = !file;
+};
+</script>
+</body>
+</html>

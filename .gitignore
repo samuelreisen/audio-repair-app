@@ -1,0 +1,17 @@
+.venv/
+.venv311/
+build/
+dist/
+release/
+samples/*
+!samples/README.txt
+bench/out/
+bench/demo/
+work/
+__pycache__/
+*.pyc
+.pytest_cache/
+build_log.txt
+*.spec
+work_server.log
+.claude/
