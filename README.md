@@ -158,7 +158,7 @@ temp folder. `build.py` packages it with PyInstaller.
 * **macOS (.dmg) and Linux (AppImage and .tar.gz):** these cannot be built on Windows. `.github/workflows/build.yml`
   builds all three on GitHub's own Windows, macOS and Linux machines. Run it from the repository's Actions tab, or push
   a tag such as `v1.0` to attach the files to a Release. The macOS app is unsigned: right-click the app, choose Open the
-  first time (or `xattr -dr com.apple.quarantine "Audio Repair.app"`). The macOS and Linux builds have not been run yet.
+  first time (or `xattr -dr com.apple.quarantine "Audio Repair.app"`). All three builds succeeded on GitHub (run 39030017126). The Windows app was launched and tested; the macOS and Linux files were built and checked to be well-formed, but have not been launched on a Mac or Linux machine yet.
 * **What the packaged app includes:** the full repair pipeline with RNNoise and M4A/MP4 decoding. The optional
   DeepFilterNet neural denoiser needs a separate Python 3.11 environment and is not bundled; the app falls back to the
   built-in denoiser automatically.
