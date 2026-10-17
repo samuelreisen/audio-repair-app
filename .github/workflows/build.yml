@@ -1,11 +1,17 @@
 name: Build desktop apps
 
-# Builds Audio Repair for Windows, macOS and Linux on GitHub's own machines.
-# Run it from the Actions tab ("Run workflow"), or push a tag like v1.0 to also attach the files to a Release.
+# Builds Audio Repair for Windows, macOS and Linux on GitHub's own machines:
+#   Windows  Audio-Repair-Setup-<v>-x64.exe (installer)  and  Audio-Repair-Portable-<v>-x64.exe (no install)
+#   macOS    Audio-Repair-<v>-mac-arm64.dmg (drag to Applications)
+#   Linux    Audio-Repair-<v>-linux-x86_64.AppImage  and  Audio-Repair-<v>-linux-x86_64.tar.gz
+# Run it from the Actions tab ("Run workflow"), or push a tag like v1.0.0 to also attach the files to a Release.
 on:
   workflow_dispatch:
   push:
     tags: ["v*"]
+
+env:
+  APP_VERSION: "1.0.0"
 
 jobs:
   build:
@@ -31,7 +37,7 @@ jobs:
         shell: bash
         run: |
           python -m pip install --upgrade pip
-          python -m pip install fastapi uvicorn python-multipart numpy scipy soundfile pyloudnorm av pyinstaller
+          python -m pip install fastapi uvicorn python-multipart numpy scipy soundfile pyloudnorm av pyinstaller pillow
           python -m pip install --no-deps pyrnnoise || echo "pyrnnoise unavailable on this platform, using the built-in denoiser"
 
       - name: Native window library
@@ -55,46 +61,61 @@ jobs:
         shell: bash
         run: python build.py
 
-      - name: Package (Windows zip)
+      # ---------------------------------------------------------------- Windows: installer + portable exe
+      - name: Package (Windows installer)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: Compress-Archive -Path "dist/Audio Repair" -DestinationPath Audio-Repair-Windows.zip
+        run: |
+          if (-not (Get-Command iscc -ErrorAction SilentlyContinue)) {
+            $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+            if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
+          }
+          $iscc = (Get-Command iscc -ErrorAction SilentlyContinue).Source
+          if (-not $iscc) { $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
+          & $iscc "/DAppVersion=$env:APP_VERSION" installer.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-ChildItem Audio-Repair-Setup-*.exe
 
+      - name: Package (Windows portable)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          AUDIO_REPAIR_ONEFILE=1 python build.py
+          cp "dist/Audio Repair Portable.exe" "Audio-Repair-Portable-${APP_VERSION}-x64.exe"
+
+      # ---------------------------------------------------------------- macOS: drag-to-Applications dmg
       - name: Package (macOS dmg)
         if: runner.os == 'macOS'
         run: |
-          hdiutil create -volname "Audio Repair" -srcfolder "dist/Audio Repair.app" -ov -format UDZO Audio-Repair-macOS.dmg
+          mkdir dmg
+          cp -R "dist/Audio Repair.app" dmg/
+          ln -s /Applications dmg/Applications
+          hdiutil create -volname "Audio Repair" -srcfolder dmg -ov -format UDZO "Audio-Repair-${APP_VERSION}-mac-arm64.dmg"
 
-      - name: Package (Linux tar.gz and AppImage)
+      # ---------------------------------------------------------------- Linux: AppImage + tar.gz
+      - name: Package (Linux AppImage and tar.gz)
         if: runner.os == 'Linux'
         run: |
-          tar -czf Audio-Repair-Linux.tar.gz -C dist "Audio Repair"
+          tar -czf "Audio-Repair-${APP_VERSION}-linux-x86_64.tar.gz" -C dist "Audio Repair"
           mkdir -p AppDir/usr/bin
           cp -r "dist/Audio Repair/." AppDir/usr/bin/
           cp assets/icon.png AppDir/audio-repair.png
-          cat > AppDir/audio-repair.desktop <<'EOF'
-          [Desktop Entry]
-          Type=Application
-          Name=Audio Repair
-          Exec=AppRun
-          Icon=audio-repair
-          Categories=AudioVideo;Audio;
-          EOF
-          sed -i 's/^          //' AppDir/audio-repair.desktop
+          printf '[Desktop Entry]\nType=Application\nName=Audio Repair\nExec=AppRun\nIcon=audio-repair\nCategories=AudioVideo;Audio;\n' > AppDir/audio-repair.desktop
           printf '#!/bin/sh\nHERE="$(dirname "$(readlink -f "$0")")"\nexec "$HERE/usr/bin/Audio Repair" "$@"\n' > AppDir/AppRun
           chmod +x AppDir/AppRun
           wget -q https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
           chmod +x appimagetool-x86_64.AppImage
-          ARCH=x86_64 ./appimagetool-x86_64.AppImage --appimage-extract-and-run AppDir Audio-Repair-Linux-x86_64.AppImage
+          ARCH=x86_64 ./appimagetool-x86_64.AppImage --appimage-extract-and-run AppDir "Audio-Repair-${APP_VERSION}-linux-x86_64.AppImage"
 
       - uses: actions/upload-artifact@v4
         with:
           name: Audio-Repair-${{ matrix.name }}
           path: |
-            Audio-Repair-Windows.zip
-            Audio-Repair-macOS.dmg
-            Audio-Repair-Linux.tar.gz
-            Audio-Repair-Linux-x86_64.AppImage
+            Audio-Repair-Setup-*.exe
+            Audio-Repair-Portable-*.exe
+            Audio-Repair-*-mac-*.dmg
+            Audio-Repair-*-linux-*.AppImage
+            Audio-Repair-*-linux-*.tar.gz
           if-no-files-found: error
 
       - name: Attach to release
@@ -102,7 +123,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            Audio-Repair-Windows.zip
-            Audio-Repair-macOS.dmg
-            Audio-Repair-Linux.tar.gz
-            Audio-Repair-Linux-x86_64.AppImage
+            Audio-Repair-Setup-*.exe
+            Audio-Repair-Portable-*.exe
+            Audio-Repair-*-mac-*.dmg
+            Audio-Repair-*-linux-*.AppImage
+            Audio-Repair-*-linux-*.tar.gz

@@ -16,6 +16,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 NAME = "Audio Repair"
+VERSION = "1.0.0"
 
 
 def find_rnnoise():
@@ -52,7 +53,12 @@ def main():
 "--exclude-module", "pystoi", "--exclude-module", "noisereduce",
             "--exclude-module", "pedalboard"]
     if sys.platform == "win32":                         # Windows window = WebView2 through pythonnet
-        args += ["--collect-all", "clr_loader", "--collect-all", "pythonnet"]
+        args += ["--collect-all", "clr_loader", "--collect-all", "pythonnet", "--icon", str(ROOT / "assets" / "icon.ico")]
+    elif sys.platform == "darwin":
+        args += ["--icon", str(ROOT / "assets" / "icon.png"), "--osx-bundle-identifier", "com.audiorepair.app"]
+    onefile = os.environ.get("AUDIO_REPAIR_ONEFILE") == "1"   # one self-contained .exe ("portable"), slower to start
+    if onefile:
+        args.append("--onefile")
     lib = find_rnnoise()
     if lib:
         args += ["--add-binary", f"{lib}{sep}rnnoise"]
@@ -62,11 +68,16 @@ def main():
     args.append(str(ROOT / "desktop.py"))
     print(" ".join(args))
     subprocess.run(args, cwd=ROOT, check=True)
-    built = scratch / "dist" / (NAME + (".app" if sys.platform == "darwin" else ""))
-    out = ROOT / "dist" / built.name
     (ROOT / "dist").mkdir(exist_ok=True)
-    shutil.rmtree(out, ignore_errors=True)
-    shutil.copytree(built, out, symlinks=True, dirs_exist_ok=True)   # tolerate files a sync client still holds
+    if onefile:
+        exe = NAME + (".exe" if sys.platform == "win32" else "")
+        out = ROOT / "dist" / ("Audio Repair Portable" + (".exe" if sys.platform == "win32" else ""))
+        shutil.copyfile(scratch / "dist" / exe, out)
+    else:
+        built = scratch / "dist" / (NAME + (".app" if sys.platform == "darwin" else ""))
+        out = ROOT / "dist" / built.name
+        shutil.rmtree(out, ignore_errors=True)
+        shutil.copytree(built, out, symlinks=True, dirs_exist_ok=True)   # tolerate files a sync client still holds
     print("built:", out, "exists:", out.exists())
 
 
