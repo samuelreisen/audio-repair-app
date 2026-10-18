@@ -11,6 +11,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 import app_updates as up  # noqa: E402
 
+B = up.bundled()["mark"]          # the mark built into this source: every test works relative to it
+
 
 @pytest.fixture
 def data(tmp_path, monkeypatch):
@@ -35,16 +37,16 @@ def test_names():
 
 
 def test_round_trip_and_damage(tmp_path):
-    buf = make(tmp_path, 2).read_bytes()
+    buf = make(tmp_path, B + 1).read_bytes()
     h, files = up.parse(buf)
-    assert h["mark"] == 2 and "pipeline/__init__.py" in files and "HANDOFF.md" in files
+    assert h["mark"] == B + 1 and "pipeline/__init__.py" in files and "HANDOFF.md" in files
     for bad, why in [(b"PK" + buf[2:], "not an Audio Repair update"),
                      (buf[:-10], "incomplete or damaged"),
                      (buf[:-1] + bytes([buf[-1] ^ 1]), "checksum")]:
         with pytest.raises(up.UpdateError, match=why):
             up.parse(bad)
     with pytest.raises(up.UpdateError, match="needs Audio Repair 9.0.0"):
-        up.parse(up.pack({"mark": 2, "minApp": "9.0.0"}, up.parse(buf)[1]))
+        up.parse(up.pack({"mark": B + 1, "minApp": "9.0.0"}, up.parse(buf)[1]))
 
 
 def test_only_app_files_allowed():
@@ -55,29 +57,29 @@ def test_only_app_files_allowed():
 
 
 def test_install_switch_and_keep(tmp_path, data):
-    assert up.status()["running"]["mark"] == 1 and up.active() == 0
-    info = up.install(make(tmp_path, 2))
-    assert info["switched"] and up.active() == 2 and up.web_file("index.html").is_file()
-    assert "mk2" in str(up.active_root())
-    assert up.inspect(make(tmp_path, 2))["reinstall"]
-    up.install(make(tmp_path, 3))
-    older = up.inspect(make(tmp_path, 2, name="again.srar"))
+    assert up.status()["running"]["mark"] == B and up.active() == 0
+    info = up.install(make(tmp_path, B + 1))
+    assert info["switched"] and up.active() == B + 1 and up.web_file("index.html").is_file()
+    assert "mk%d" % (B + 1) in str(up.active_root())
+    assert up.inspect(make(tmp_path, B + 1))["reinstall"]
+    up.install(make(tmp_path, B + 2))
+    older = up.inspect(make(tmp_path, B + 1, name="again.srar"))
     assert older["ok"] and older["reinstall"]
-    assert up.active() == 3
-    up.switch_to(2)
-    assert up.active() == 2
-    up.switch_to(1)                              # the built-in mark
-    assert up.active() == 0 and up.status()["running"]["name"] == "Mk I"
-    for n in range(4, 10):
+    assert up.active() == B + 2
+    up.switch_to(B + 1)
+    assert up.active() == B + 1
+    up.switch_to(B)                              # the built-in mark
+    assert up.active() == 0 and up.status()["running"]["name"] == up.mark_name(B)
+    for n in range(B + 3, B + 9):
         up.install(make(tmp_path, n))
-    assert [m["mark"] for m in up.installed()] == [9, 8, 7, 6, 5]
-    assert not up.inspect(make(tmp_path, 1, name="one.srar"))["ok"]       # already built in
+    assert [m["mark"] for m in up.installed()] == [B + 8, B + 7, B + 6, B + 5, B + 4]
+    assert not up.inspect(make(tmp_path, B, name="one.srar"))["ok"]       # already built in
 
 
 def test_older_mark_installs_without_switching(tmp_path, data):
-    up.install(make(tmp_path, 3))
-    info = up.install(make(tmp_path, 2))
-    assert not info["switched"] and up.active() == 3
+    up.install(make(tmp_path, B + 2))
+    info = up.install(make(tmp_path, B + 1))
+    assert not info["switched"] and up.active() == B + 2
 
 
 def test_handoff_newer_wins(tmp_path, data):
@@ -92,8 +94,8 @@ def test_handoff_newer_wins(tmp_path, data):
 
 
 def test_install_updates_handoff(tmp_path, data):
-    up.install(make(tmp_path, 2))
-    assert up.handoff_mark((data / "HANDOFF.md").read_bytes()) == 2
+    up.install(make(tmp_path, B + 1))
+    assert up.handoff_mark((data / "HANDOFF.md").read_bytes()) == B + 1
 
 
 def test_project_handoff_is_stamped_and_has_changelog():
@@ -123,16 +125,17 @@ def boot(tmp_path):
 
 def test_boot_runs_the_marks_code(tmp_path, data):
     engine = (ROOT / "engine.py").read_bytes() + b"\nMARK_TEST = 'from mk2'\n"
-    up.install(make(tmp_path, 2, {"engine.py": engine}))
+    up.install(make(tmp_path, B + 1, {"engine.py": engine}))
     r = boot(tmp_path)
-    assert r["n"] == 2 and r["marker"] == "from mk2"
-    assert "mk2" in r["engine"] and "mk2" in r["declip"]
+    d = "mk%d" % (B + 1)
+    assert r["n"] == B + 1 and r["marker"] == "from mk2"
+    assert d in r["engine"] and d in r["declip"]
 
 
 def test_broken_mark_falls_back(tmp_path, data):
-    up.install(make(tmp_path, 2, {"engine.py": b"raise RuntimeError('broken on purpose')\n"}))
+    up.install(make(tmp_path, B + 1, {"engine.py": b"raise RuntimeError('broken on purpose')\n"}))
     r = boot(tmp_path)
-    assert r["n"] == 0 and "mk2" not in r["engine"] and "could not start" in r["notice"]
+    assert r["n"] == 0 and ("mk%d" % (B + 1)) not in r["engine"] and "could not start" in r["notice"]
     assert up.active() == 0
 
 
@@ -140,4 +143,5 @@ def test_make_update_dry_run():
     out = subprocess.run([sys.executable, str(ROOT / "tools" / "make_update.py"), "--title", "Test", "--notes",
                           "one\ntwo", "--dry-run"], capture_output=True, text=True, timeout=120)
     assert out.returncode == 0, out.stderr
-    assert "Mk II" in out.stdout and "dry run" in out.stdout
+    last = max(m["mark"] for m in json.loads((ROOT / "updates" / "history.json").read_text(encoding="utf-8"))["marks"])
+    assert up.mark_name(last + 1) in out.stdout and "dry run" in out.stdout

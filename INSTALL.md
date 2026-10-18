@@ -35,8 +35,13 @@ The app is not signed with a paid certificate, so your computer warns once:
 2. Click **Choose file** (or drop a recording onto the window). WAV, MP3, FLAC, OGG, M4A and MP4 voice memos work.
 3. Leave the settings on their defaults, or switch repairs on and off.
 4. Click **Repair audio**. A 13-second clip takes about 12 seconds; a 2-minute voice memo about a minute.
-5. Compare **Before** and **After**, read **What was done**, then click **Save repaired file** and choose where to
-   save it. Your original is never changed.
+5. Compare **Before** and **After**. Drag across either picture to scrub, and switch **Picture** to **Spectrum** to
+   see the sound as colours (brighter = louder, higher = higher pitch). Before and After stay at the same position, so
+   you can switch between them while listening.
+6. Change the **Tone** if you want: **Warmth**, **Clarity**, **Brightness** and **Air**, or the Warmer / Brighter /
+   Clearer buttons. You hear it straight away, and it never repairs the recording again.
+7. Read **What was done**, then click **Save** and choose where to save it (with your tone changes, if you made any).
+   Your original is never changed.
 
 ## Updates
 

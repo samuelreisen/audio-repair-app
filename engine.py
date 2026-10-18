@@ -9,8 +9,12 @@ import time
 import uuid
 from pathlib import Path
 
+import numpy as np
+
 from pipeline import run
-from pipeline.io import AudioError, mp3_supported
+from pipeline import tone_after
+from pipeline.io import AudioError, load_audio, mp3_supported, save_audio
+from pipeline.master import master_with_info
 from pipeline.studio import studio_available
 
 WORK = Path(tempfile.gettempdir()) / "audio_repair_work"
@@ -28,8 +32,15 @@ def capabilities():
 
 def _forget(job_id):
     j = _jobs.pop(job_id, None)
-    if j and j.get("out"):
-        Path(j["out"]).unlink(missing_ok=True)
+    if j:
+        for key in ("out", "base"):
+            if j.get(key) and not _still_used(j[key]):
+                Path(j[key]).unlink(missing_ok=True)
+
+
+def _still_used(path):
+    """The stored repair result is shared by the tone-adjusted copies made from it: keep it while any job uses it."""
+    return any(path in (j.get("out"), j.get("base")) for j in _jobs.values())
 
 
 def _sweep():
@@ -39,7 +50,7 @@ def _sweep():
         for i, k in enumerate(done):
             if now - _jobs[k]["t"] > JOB_TTL_S or len(done) - i > MAX_JOBS:
                 _forget(k)
-    live = {Path(j["out"]).name for j in _jobs.values() if j.get("out")}
+    live = {Path(j[k]).name for j in _jobs.values() for k in ("out", "base") if j.get(k)}
     for p in WORK.iterdir():
         try:
             if p.name not in live and now - p.stat().st_mtime > JOB_TTL_S:
@@ -110,7 +121,12 @@ def _worker(job_id, src, out, mode, opts):
     def progress(p, msg):
         _jobs[job_id].update(progress=p, message=msg)
     try:
-        run(str(src), str(out), mode, opts, progress)
+        base = _jobs[job_id]["base"]
+        run(str(src), base, mode, opts, progress)
+        if base != str(out):                                   # MP3 asked for: encode from the full-quality result
+            import soundfile as sf
+            data, sr = sf.read(base, dtype="float32", always_2d=True)
+            save_audio(str(out), data.T, sr)
         _jobs[job_id].update(state="done", progress=1.0, message="Done", t=time.time())
     except AudioError as e:
         _jobs[job_id].update(state="error", message=str(e), t=time.time())
@@ -128,8 +144,39 @@ def _worker(job_id, src, out, mode, opts):
                                      % (type(e).__name__, ", at: " + where if where else ""))
 
 
+def _tone_worker(job_id, base, out, mode, tone):
+    """Apply the tone settings to a finished repair and re-match its loudness. The repair itself is not run again."""
+    def progress(p, msg):
+        _jobs[job_id].update(progress=p, message=msg)
+    try:
+        import soundfile as sf
+        progress(0.1, "Loading the repaired audio")
+        data, sr = sf.read(base, dtype="float32", always_2d=True)
+        x = data.T
+        progress(0.3, "Applying your tone changes")
+        x = tone_after.apply_tone(x, sr, tone)
+        progress(0.55, "Matching the loudness")
+        x, info = master_with_info(x, sr, mode)
+        progress(0.9, "Saving")
+        save_audio(str(out), np.clip(x, -1.0, 1.0).astype(np.float32), sr)
+        t = tone_after.clean_tone(tone)
+        said = ", ".join("%s %+.1f dB" % (k, v) for k, v in t.items() if abs(v) >= 0.05)
+        _jobs[job_id]["report"].append("Applied: tone changed after the repair (%s)" % said)
+        _jobs[job_id]["report"].append("Applied: loudness matched to %.1f LUFS with true peak %.1f dBTP"
+                                       % (info.get("lufs_out", float("nan")), info.get("tp", float("nan"))))
+        _jobs[job_id].update(state="done", progress=1.0, message="Done", t=time.time())
+    except AudioError as e:
+        _jobs[job_id].update(state="error", message=str(e), t=time.time())
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        detail = _error_detail(job_id, e)
+        _jobs[job_id].update(state="error", t=time.time(), detail=detail, log=_log_error(detail),
+                             message="The tone change could not be applied (%s)." % type(e).__name__)
+
+
 def start(path, mode="voice", fmt="wav", declick=True, tame=True, declip=True, denoise=True, eq=True,
-          master=True, denoise_strength=None, studio=False):
+          master=True, denoise_strength=None, studio=False, base_job=None, tone=None):
     src = Path(path)
     if not src.is_file():
         raise AudioError("That file could not be found.")
@@ -140,9 +187,19 @@ def start(path, mode="voice", fmt="wav", declick=True, tame=True, declip=True, d
     _sweep()
     job_id = uuid.uuid4().hex
     out = WORK / ("%s_out.%s" % (job_id, fmt))
+    if base_job is not None:                      # a tone change on an earlier, finished repair
+        b = _jobs.get(base_job)
+        if not b or b["state"] != "done" or not b.get("base") or not Path(b["base"]).exists():
+            raise AudioError("The repaired audio is no longer available. Repair the recording again.")
+        _jobs[job_id] = {"state": "running", "progress": 0.0, "message": "Queued", "t": time.time(), "out": str(out),
+                         "base": b["base"], "report": [], "name": "%s_fixed.%s" % (src.stem[:80] or "audio", fmt),
+                         "src": str(src), "mode": b.get("mode", mode), "fmt": fmt, "opts": {"tone": tone_after.clean_tone(tone)}}
+        threading.Thread(target=_tone_worker, args=(job_id, b["base"], out, b.get("mode", mode), tone), daemon=True).start()
+        return job_id
+    base = out if fmt == "wav" else WORK / ("%s_base.wav" % job_id)
     report = []
     _jobs[job_id] = {"state": "running", "progress": 0.0, "message": "Queued", "t": time.time(), "out": str(out),
-                     "report": report, "name": "%s_fixed.%s" % (src.stem[:80] or "audio", fmt), "src": str(src),
+                     "base": str(base), "report": report, "name": "%s_fixed.%s" % (src.stem[:80] or "audio", fmt), "src": str(src),
                      "mode": mode, "fmt": fmt}
     opts = dict(declick=bool(declick), tame=bool(tame), declip=bool(declip), denoise=bool(denoise), eq=bool(eq),
                 master=bool(master), studio=bool(studio), report=report)

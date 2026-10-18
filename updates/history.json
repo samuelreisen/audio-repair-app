@@ -18,6 +18,17 @@
    "sha256": "20145e5c182ca1b64ac31d7fe650183402bee23e2ef509a0947f5a9befec865f",
    "bytes": 74739,
    "minApp": "1.1.0"
+  },
+  {
+   "mark": 3,
+   "name": "Mk III",
+   "title": "Scrub the spectrum and change the tone after repairing",
+   "notes": "New: drag across the Before or After picture to scrub, with a moving playhead. Switch Picture to Spectrum to see the sound as colours. Before and After stay at the same position, so you can switch between them while listening.\nNew: Tone. Change Warmth, Clarity, Brightness and Air (or use Warmer / Brighter / Clearer) after the repair. You hear it straight away, the spectrum follows it, and saving applies it to the repaired file and matches the loudness again, without repairing the recording a second time.",
+   "created": "2026-10-18",
+   "file": "Audio Repair - Mk III update.srar",
+   "sha256": "96a69932ef51fa860cc0508ac2889051f308dfcf8af5ce1b153c17f61dc11e5d",
+   "bytes": 85293,
+   "minApp": "1.1.0"
   }
  ]
 }

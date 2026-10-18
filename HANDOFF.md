@@ -1,4 +1,4 @@
-<!-- handoff-mark: 2 -->
+<!-- handoff-mark: 3 -->
 # Audio Repair – project handoff
 
 > **MAINTENANCE RULE: everything that is done to this project is saved in this file.** Add a dated entry at the top of
@@ -115,6 +115,8 @@ this app; do not commit that folder from here.)
 | `static/index.html` | The whole interface (HTML + CSS + JS, no build step); works in the app window and, for development, in a browser |
 | `mark.json` | Which mark is built into this source (`{"mark": 1, "name": "Mk I", ...}`) |
 | `tools/make_update.py` | Makes the next `.srar` update (section 9) |
+| `pipeline/tone_after.py` | The four tone controls applied after the repair (section 5, "Tone after the repair") |
+| `bench/ui_harness.py` | Opens the page in a browser with a mock engine, for looking at and driving the interface (section 7) |
 | `tools/clean_hparams.py` | Makes the Studio model's settings file readable on Windows (section 6); run by the GitHub build |
 | `updates/history.json` | Every mark made; `updates/out/` holds the made `.srar` files (git-ignored) |
 | `build.py` | PyInstaller build (builds in the temp folder, copies to `dist/`) |
@@ -151,6 +153,25 @@ case), mastering must be last (anything after it breaks the true-peak ceiling). 
 3 clips, input -> output): combined damage STOI 0.796 -> 0.864, clipped 0.931 -> 0.993, noisy SI-SDR 5.9 -> 11.4 dB;
 all cases land at -16.0 LUFS / -1.0 dBTP. Full tables in README.md. The two real voice memos: 58 + 6 and 40 + 6
 clicks / bangs repaired, both now at -16.0 LUFS (one was stuck at -25 LUFS before declick and tame).
+
+### Tone after the repair (added in Mk III)
+`pipeline/tone_after.py`: four RBJ biquads, each -8..+8 dB: **warmth** (low shelf 200 Hz), **clarity** (bell 3 kHz,
+Q 0.8), **brightness** (high shelf 6 kHz), **air** (high shelf 12 kHz). They are applied to the *stored result of the
+repair*, never to the original, so changing the tone never re-runs the repair (a 160 s file re-tones in a few seconds;
+a Studio-voice repair is not repeated). How it works end to end:
+- A normal repair now always writes its full-quality WAV first (`job["base"]`; the MP3, if asked for, is encoded from
+  it), and the job keeps that file while any tone job still uses it (`_still_used` in `engine.py`).
+- `engine.start(path, ..., base_job=<finished job id>, tone={...})` starts a **tone job**: load the base WAV at its own
+  sample rate, `apply_tone`, then `master_with_info` to match the loudness again (-16 LUFS voice / -14 music, true peak
+  -1 dBTP; a brighter voice is also a louder one), then save as WAV or MP3. Its report lines are "Applied: tone changed
+  after the repair (...)" and "Applied: loudness matched to ...". Tone is always relative to the base, so repeating it is
+  idempotent. A tone job is an ordinary job (poll `status`, then `save`), which is why `desktop.py`'s `Api` needed no
+  change: `Api.start` passes any options straight to `engine.start`, and an update can only change `engine.py`,
+  `pipeline/` and `static/`.
+- The page previews the same four curves live with Web Audio `BiquadFilterNode`s (same formulas: shelf slope 1, bell Q
+  0.8) with a small gain compensation estimated over the speech range; the saved file is matched exactly by the
+  mastering stage. Measured in the packaged app (13 s clip, brightness +6, warmth -2, air +3): same length, -16.0 LUFS
+  before and after, the share of energy above 5 kHz up 3.6 dB.
 
 ## 6. AI models
 
@@ -206,6 +227,23 @@ details** and **Open error log**, and it is appended to `errors.log` in the data
 Plain `AudioError`s (unsupported file, no such file) have no report: their message already says what is wrong. The
 short message names the error type and stage, e.g. "(NotImplementedError, at: Rebuilding the voice (AI))". When a user
 reports a failure, ask for the copied details first.
+
+### The result view: scrubbing, spectrum, tone (added in Mk III)
+All in `static/index.html` (search for "Players: scrubbing"). Both players are always at the same position:
+- **Scrubbing.** Each picture is a `.scrub` box (`role="slider"`, arrow keys 1 s / Shift 5 s, Home / End) with pointer
+  capture: press and drag seeks **both** players (`seekAll`), a playhead line and "m:ss / m:ss" labels follow (a
+  `requestAnimationFrame` loop while anything plays). Playing one player pauses the other, and pausing or seeking one
+  copies its position to the other, so Before / After can be switched while listening.
+- **Picture** switch: **Waveform** (peak bars) or **Spectrum** (a spectrogram computed in the page: 1024-point FFT,
+  0-12 kHz, 72 dB range, with a kHz scale). The browser decodes each file once (`decodeClip`); nothing is sent anywhere.
+- **Tone** (native app only, `#tonebox`): presets Flat / Warmer / Brighter / Clearer and four sliders. The After
+  player is routed through `MediaElementSource -> 4 filters -> gain`, created on first play (`ensureGraph`). In Spectrum
+  view the After picture is re-rendered through the same filters in an `OfflineAudioContext` (debounced 220 ms), so the
+  brightness change is visible. **Save** with tone flat saves the stored result; otherwise it starts a tone job
+  (`start(path, {mode, fmt, base_job, tone})`, see section 5), shows its progress in the Save box, then calls
+  `save(<tone job id>)`. The chosen format (WAV / MP3) at save time is used.
+- Looking at the page without the app: `python bench/ui_harness.py before.wav after.wav` serves it with a mock engine
+  (records `start` / `save` calls in `window.__calls`) so it can be opened and driven in any browser.
 
 ## 8. Building and packaging
 
@@ -268,6 +306,9 @@ files. `app_updates.parse` checks all of it and gives a plain-English reason for
   update, clicks Install, and records the result and the handoff copies. `AUDIO_REPAIR_DATA_DIR` points the data
   folder somewhere else (always use a scratch folder for update tests). Breadcrumbs: `audio_repair_trace.log` and
   `audio_repair_stderr.log` in the temp folder.
+- Tests added over time: `tests/test_updates.py` (update files, relative to the built-in mark, so it survives every
+  release), `tests/test_errors.py` (error report, Studio settings fix, deepspeed stand-in), `tests/test_tone_after.py`
+  (filter accuracy against the RBJ curves, the tone job: same length, loudness matched, brighter, repair not re-run).
 - Run test builds with a scratch data folder; do not leave test marks installed in a real user's data folder.
 
 ## 11. Open items and known limits
@@ -283,6 +324,37 @@ files. `app_updates.parse` checks all of it and gives a plain-English reason for
 ## 12. Change log (newest first; add an entry for everything you do; see the rule at the top)
 
 Format: **date – title.** Then Asked / Changed / Verified / Not done.
+
+### 2026-10-18 – Mk III "Scrub the spectrum and change the tone after repairing" – update file
+- **Asked:** be able to scrub on the audio spectrum, and change the brightness and tone of the voice after the
+  processing without reprocessing the audio.
+- **Changed:**
+  - **Scrubbing.** Drag or click on the Before or After picture to jump anywhere, with a moving playhead and time
+    labels; both players stay at the same position and playing one pauses the other, so Before / After can be switched
+    while listening. Keyboard: arrows (Shift = 5 s), Home, End. (HANDOFF section 7, "The result view".)
+  - **Spectrum view.** A Picture switch (Waveform / Spectrum): a spectrogram with a kHz scale, scrubbable like the
+    waveform; the After picture follows the tone settings.
+  - **Tone after the repair.** `pipeline/tone_after.py` (warmth 200 Hz low shelf, clarity 3 kHz bell, brightness 6 kHz
+    high shelf, air 12 kHz high shelf, each -8..+8 dB) and `engine.start(..., base_job, tone)`: a repair now keeps its
+    full-quality WAV, and a tone job applies the curves to it and re-matches the loudness; the repair stages never run
+    again. The page previews it live (Web Audio filters, presets Flat / Warmer / Brighter / Clearer) and Save applies
+    it. Section 5, "Tone after the repair".
+  - `tests/test_tone_after.py` (17 tests); `tests/test_updates.py` now works relative to the built-in mark;
+    `bench/ui_harness.py` (look at / drive the page with a mock engine); INSTALL.md steps 5-7.
+- **Verified:** the page was driven in a browser against a mock engine: Choose file, Repair, result view; dragging on
+  the After picture at 72 % moved both players to 9.23 s and both playheads / labels together; Spectrum view drew the
+  Before (noisy) and After (clean) spectrograms with a kHz scale; the Brighter preset raised the After spectrum's
+  8-12 kHz band by 3.3 dB and changed Save to "Save with your tone changes"; playing After created the filter graph
+  with the slider values, switching to Before kept the position and stopped After; Save with tone made the page call
+  `start({base_job, tone})` then `save(<tone job>)`, Save with tone flat called `save(<repair job>)` directly. In the
+  real installed Windows app (trial Mk III installed into it): a repair, then a tone job (warmth -2, brightness +6, air
+  +3): same length (615,217 samples), -16.0 LUFS before and after, the share of energy above 5 kHz up 3.6 dB. Tests
+  60/60 (Python 3.11), 58 passed and 2 skipped (Python 3.14, no AI libraries).
+- **Not done:** the tone sliders and the Save-with-tone flow were driven against a mock engine in a browser, not by
+  clicking in the installed app's own window (the app's self-test cannot drive them); scrubbing / spectrum / tone were
+  not tried on the Mac; the live preview's level compensation is an estimate (the saved file's loudness is exact);
+  the tone controls are not shown in the browser fallback mode.
+- **Update file:** `Audio Repair - Mk III update.srar`, needs app 1.1.0 or newer. Installing it replaces the user's older HANDOFF.md with this one.
 
 ### 2026-10-18 – Mk II "Studio voice fix and error details" – update file
 - **Asked:** a user's Studio voice repair of a real 160 s voice memo ended with "This file could not be repaired /

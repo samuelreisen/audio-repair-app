@@ -170,6 +170,32 @@
   .btns .btn { flex: 1 1 140px; }
   .notice { font-size: .9375rem; color: var(--red-text); }
 
+  /* Scrubbing, spectrum view and tone */
+  .cliphead { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  .time { font-size: .8125rem; color: var(--label2); font-variant-numeric: tabular-nums; }
+  .scrub { position: relative; border-radius: 10px; background: var(--fill); cursor: col-resize; touch-action: none; user-select: none;
+           -webkit-user-select: none; overflow: hidden; min-height: 56px; }
+  .scrub:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .scrub canvas.wave { display: block; width: 100%; height: 56px; border-radius: 0; background: transparent; pointer-events: none; }
+  .scrub.spec canvas.wave, .scrub.spec { min-height: 132px; }
+  .scrub.spec canvas.wave { height: 132px; }
+  .ph { position: absolute; top: 0; bottom: 0; left: 0; width: 2px; margin-left: -1px; background: var(--label); pointer-events: none;
+        box-shadow: 0 0 0 1px rgb(255 255 255 / .55); }
+  .ph::before { content: ""; position: absolute; top: 0; left: 50%; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%;
+                background: var(--label); box-shadow: 0 0 0 1.5px rgb(255 255 255 / .7); }
+  .axis { position: absolute; inset: 0; pointer-events: none; }
+  .axis span { position: absolute; right: 6px; font-size: .6875rem; line-height: 1; color: rgb(255 255 255 / .8); transform: translateY(50%);
+               text-shadow: 0 0 3px rgb(0 0 0 / .8); }
+  .axis i { position: absolute; left: 0; right: 0; border-top: 1px solid rgb(255 255 255 / .12); }
+  .hint { padding: 0 16px 14px; font-size: .8125rem; color: var(--label2); }
+  .tone-row { flex-direction: column; align-items: stretch; gap: 0; }
+  .tone-row .top { display: flex; justify-content: space-between; align-items: baseline; }
+  .tone-row .top .d { margin-top: 0; }
+  .tone-val { font-variant-numeric: tabular-nums; color: var(--label2); font-size: .9375rem; min-width: 64px; text-align: right; }
+  .presets { display: flex; gap: 8px; flex-wrap: wrap; padding: 12px 16px; }
+  .presets .btn { flex: 1 1 90px; }
+  .saved.bad { color: var(--red-text); }
+
   /* Advanced error details */
   #errbox { margin-top: 12px; }
   #errbox .btns { margin-top: 0; }
@@ -280,9 +306,51 @@
   <section id="result" hidden>
     <div class="head">Result</div>
     <div class="group">
-      <div class="clip"><span class="t">Before</span><canvas id="wo" class="wave" aria-hidden="true"></canvas><audio id="orig" controls></audio></div>
-      <div class="clip"><span class="t">After</span><canvas id="wf" class="wave" aria-hidden="true"></canvas><audio id="fixed" controls></audio></div>
-      <div class="dlwrap"><a id="dl" class="btn prominent">Download repaired file</a><div id="saved" class="saved" aria-live="polite"></div></div>
+      <div class="row"><span class="t">Picture</span>
+        <div class="seg" role="radiogroup" aria-label="Picture type">
+          <label><input type="radio" name="view" value="wave" checked><span>Waveform</span></label>
+          <label><input type="radio" name="view" value="spec"><span>Spectrum</span></label>
+        </div>
+      </div>
+      <div class="clip">
+        <div class="cliphead"><span class="t">Before</span><span class="time" id="to"></span></div>
+        <div class="scrub" id="so" tabindex="0" role="slider" aria-label="Position in the Before recording" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <canvas id="wo" class="wave" aria-hidden="true"></canvas><div class="axis" aria-hidden="true"></div><div class="ph" id="po"></div></div>
+        <audio id="orig" controls></audio>
+      </div>
+      <div class="clip">
+        <div class="cliphead"><span class="t">After</span><span class="time" id="tf"></span></div>
+        <div class="scrub" id="sf" tabindex="0" role="slider" aria-label="Position in the After recording" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <canvas id="wf" class="wave" aria-hidden="true"></canvas><div class="axis" aria-hidden="true"></div><div class="ph" id="pf"></div></div>
+        <audio id="fixed" controls></audio>
+      </div>
+      <div class="hint">Drag across either picture to scrub. Before and After stay in step, so you can switch between them while listening.</div>
+    </div>
+
+    <div id="tonebox" hidden>
+      <div class="head">Tone</div>
+      <div class="group">
+        <div class="presets">
+          <button type="button" class="btn small" data-preset="flat">Flat</button>
+          <button type="button" class="btn small" data-preset="warmer">Warmer</button>
+          <button type="button" class="btn small" data-preset="brighter">Brighter</button>
+          <button type="button" class="btn small" data-preset="clearer">Clearer</button>
+        </div>
+        <div class="row tone-row"><div class="top"><span><span class="t">Warmth</span><span class="d">Body and weight of the voice</span></span><span class="tone-val" id="v-warmth">0.0 dB</span></div>
+          <input id="t-warmth" type="range" min="-8" max="8" step="0.5" value="0" aria-label="Warmth in decibels"></div>
+        <div class="row tone-row"><div class="top"><span><span class="t">Clarity</span><span class="d">How forward and easy to understand</span></span><span class="tone-val" id="v-clarity">0.0 dB</span></div>
+          <input id="t-clarity" type="range" min="-8" max="8" step="0.5" value="0" aria-label="Clarity in decibels"></div>
+        <div class="row tone-row"><div class="top"><span><span class="t">Brightness</span><span class="d">Overall brightness of the voice</span></span><span class="tone-val" id="v-brightness">0.0 dB</span></div>
+          <input id="t-brightness" type="range" min="-8" max="8" step="0.5" value="0" aria-label="Brightness in decibels"></div>
+        <div class="row tone-row"><div class="top"><span><span class="t">Air</span><span class="d">Sparkle in the top end</span></span><span class="tone-val" id="v-air">0.0 dB</span></div>
+          <input id="t-air" type="range" min="-8" max="8" step="0.5" value="0" aria-label="Air in decibels"></div>
+        <div class="hint" style="padding-top:12px" id="tonehint">Changes are heard straight away on After. They are applied to the saved file without repairing the recording again, and the loudness is matched again when you save.</div>
+      </div>
+    </div>
+
+    <div class="head">Save</div>
+    <div class="group">
+      <div class="dlwrap" style="border-top:0"><a id="dl" class="btn prominent">Download repaired file</a><div id="saved" class="saved" aria-live="polite"></div></div>
     </div>
     <div class="head">What was done</div>
     <div class="group"><ul id="report"></ul></div>
@@ -402,41 +470,293 @@ $('auto').onchange = syncStrength;
 
 function show(el) { el.hidden = false; el.classList.add('reveal'); requestAnimationFrame(() => reveal(el)); }
 
-/* Draw the real waveform of the audio (peak per bar). Silently skipped if the browser cannot decode it. */
-async function drawWave(canvas, arrayBuffer) {
-  try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const buf = await ctx.decodeAudioData(arrayBuffer);
-    ctx.close();
-    const d = buf.getChannelData(0), W = canvas.clientWidth, H = canvas.clientHeight, dpr = window.devicePixelRatio || 1;
-    canvas.width = W * dpr; canvas.height = H * dpr;
-    const g = canvas.getContext('2d'); g.scale(dpr, dpr);
-    const bars = Math.floor(W / 4), step = Math.floor(d.length / bars) || 1;
-    g.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
-    for (let i = 0; i < bars; i++) {
-      let p = 0;
-      for (let j = i * step; j < (i + 1) * step && j < d.length; j += 8) p = Math.max(p, Math.abs(d[j]));
-      const h = Math.max(2, p * (H - 8));
-      g.beginPath(); g.roundRect(i * 4, (H - h) / 2, 2.5, h, 1.25); g.fill();
-    }
-  } catch (e) { canvas.hidden = true; }
-}
-
 function b64ToBytes(b64) {
   const bin = atob(b64), n = bin.length, out = new Uint8Array(n);
   for (let i = 0; i < n; i++) out[i] = bin.charCodeAt(i);
   return out;
 }
-/* Attach audio the app read from disk to a player and its waveform. */
-function attach(audioEl, canvas, res) {
-  if (!res) { audioEl.hidden = true; canvas.hidden = true; return null; }
+/* Attach audio the app read from disk to a player, its picture and its scrubber. */
+function attach(key, res) {
+  const c = clips[key];
+  if (!res) { c.audio.hidden = true; c.box.hidden = true; return null; }
   const bytes = b64ToBytes(res.data);
   const url = URL.createObjectURL(new Blob([bytes], { type: res.mime }));
-  audioEl.hidden = false; canvas.hidden = false;
-  audioEl.src = url;
-  drawWave(canvas, bytes.buffer.slice(0));
+  c.audio.hidden = false; c.box.hidden = false;
+  c.audio.src = url;
+  decodeClip(key, bytes.buffer.slice(0));
   return url;
 }
+
+/* ------------------------------------------------------------------------------------------------------------------
+   Players: scrubbing, waveform / spectrum pictures, live tone preview.
+   Both players stay at the same position, so Before and After can be switched while listening. The tone sliders change
+   After instantly (browser filters); saving applies the same curves to the stored repair result (pipeline/tone_after.py).
+   ------------------------------------------------------------------------------------------------------------------ */
+const clips = {
+  orig: { audio: $('orig'), canvas: $('wo'), box: $('so'), ph: $('po'), time: $('to'), buf: null, spec: null, specTone: null },
+  fixed: { audio: $('fixed'), canvas: $('wf'), box: $('sf'), ph: $('pf'), time: $('tf'), buf: null, spec: null, specTone: null },
+};
+const TONE_BANDS = { warmth: ['lowshelf', 200, null], clarity: ['peaking', 3000, 0.8], brightness: ['highshelf', 6000, null], air: ['highshelf', 12000, null] };
+const PRESETS = { flat: { warmth: 0, clarity: 0, brightness: 0, air: 0 }, warmer: { warmth: 3, clarity: 0, brightness: -1.5, air: 0 },
+                  brighter: { warmth: 0, clarity: 0.5, brightness: 3, air: 2 }, clearer: { warmth: -1, clarity: 3, brightness: 1, air: 0 } };
+const tone = { warmth: 0, clarity: 0, brightness: 0, air: 0 };
+let viewMode = 'wave', resultPath = null, resultMode = 'voice';
+const isFlat = () => Object.values(tone).every(v => Math.abs(v) < 0.05);
+
+function fmtTime(t) {
+  if (!isFinite(t)) return '0:00';
+  const m = Math.floor(t / 60), s = Math.floor(t % 60);
+  return m + ':' + String(s).padStart(2, '0');
+}
+function updateHeads() {
+  for (const c of Object.values(clips)) {
+    const d = c.audio.duration, t = c.audio.currentTime || 0;
+    if (!isFinite(d) || !d) { c.time.textContent = ''; continue; }
+    const f = Math.min(1, t / d);
+    c.ph.style.left = (f * 100) + '%';
+    c.time.textContent = fmtTime(t) + ' / ' + fmtTime(d);
+    c.box.setAttribute('aria-valuenow', String(Math.round(f * 100)));
+    c.box.setAttribute('aria-valuetext', fmtTime(t) + ' of ' + fmtTime(d));
+  }
+}
+let raf = 0;
+function loop() {
+  updateHeads();
+  raf = Object.values(clips).some(c => !c.audio.paused && !c.audio.ended) ? requestAnimationFrame(loop) : 0;
+}
+function startLoop() { if (!raf) raf = requestAnimationFrame(loop); }
+function seekAll(t) {
+  for (const c of Object.values(clips)) {
+    const d = c.audio.duration;
+    if (c.audio.src && isFinite(d)) c.audio.currentTime = Math.max(0, Math.min(d, t));
+  }
+  updateHeads();
+}
+let syncing = false;
+for (const [key, c] of Object.entries(clips)) {
+  const other = clips[key === 'orig' ? 'fixed' : 'orig'];
+  c.audio.addEventListener('play', () => {
+    if (key === 'fixed') ensureGraph();
+    if (!other.audio.paused) other.audio.pause();            // one at a time: switching keeps the position
+    startLoop();
+  });
+  const follow = () => {
+    if (syncing || !other.audio.src || !isFinite(other.audio.duration)) return;
+    syncing = true;
+    if (Math.abs(other.audio.currentTime - c.audio.currentTime) > 0.02) other.audio.currentTime = c.audio.currentTime;
+    setTimeout(() => { syncing = false; }, 0);
+  };
+  c.audio.addEventListener('pause', () => { follow(); updateHeads(); });
+  c.audio.addEventListener('seeked', () => { follow(); updateHeads(); });
+  c.audio.addEventListener('ended', updateHeads);
+  c.audio.addEventListener('loadedmetadata', updateHeads);
+  c.audio.addEventListener('durationchange', updateHeads);
+  // scrubbing: press and drag on the picture
+  const at = e => { const r = c.box.getBoundingClientRect(); return Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * c.audio.duration; };
+  let down = false;
+  c.box.addEventListener('pointerdown', e => {
+    if (!isFinite(c.audio.duration)) return;
+    down = true; c.box.setPointerCapture(e.pointerId); seekAll(at(e)); e.preventDefault();
+  });
+  c.box.addEventListener('pointermove', e => { if (down) seekAll(at(e)); });
+  const up = e => { down = false; try { c.box.releasePointerCapture(e.pointerId); } catch (x) { } };
+  c.box.addEventListener('pointerup', up);
+  c.box.addEventListener('pointercancel', up);
+  c.box.addEventListener('keydown', e => {                    // arrows move 1 s (5 s with Shift), Home / End jump
+    const d = c.audio.duration;
+    if (!isFinite(d)) return;
+    const step = e.shiftKey ? 5 : 1, t = c.audio.currentTime;
+    let n = null;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowUp') n = t + step;
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') n = t - step;
+    else if (e.key === 'Home') n = 0;
+    else if (e.key === 'End') n = d;
+    if (n !== null) { e.preventDefault(); seekAll(n); }
+  });
+}
+
+/* ---- pictures ---- */
+function sizeCanvas(c) {
+  const dpr = window.devicePixelRatio || 1, W = c.canvas.clientWidth, H = c.canvas.clientHeight;
+  c.canvas.width = Math.max(1, Math.round(W * dpr)); c.canvas.height = Math.max(1, Math.round(H * dpr));
+  const g = c.canvas.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { g, W, H };
+}
+function drawWaveform(c) {
+  const { g, W, H } = sizeCanvas(c);
+  g.clearRect(0, 0, W, H);
+  if (!c.buf) return;
+  const d = c.buf.getChannelData(0), bars = Math.floor(W / 4), step = Math.floor(d.length / bars) || 1;
+  g.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+  for (let i = 0; i < bars; i++) {
+    let p = 0;
+    for (let j = i * step; j < (i + 1) * step && j < d.length; j += 8) p = Math.max(p, Math.abs(d[j]));
+    const h = Math.max(2, p * (H - 8));
+    g.beginPath(); g.roundRect(i * 4, (H - h) / 2, 2.5, h, 1.25); g.fill();
+  }
+}
+
+/* Spectrogram: time across, frequency up (0 to 12 kHz), brighter = louder. */
+const FFT_N = 1024, SPEC_ROWS = 110, SPEC_RANGE_DB = 72;
+let fftTables = null;
+function fftInit() {
+  const N = FFT_N, rev = new Uint16Array(N), cos = new Float64Array(N / 2), sin = new Float64Array(N / 2), win = new Float64Array(N);
+  for (let i = 0; i < N; i++) { let r = 0; for (let b = 0, x = i; b < 10; b++, x >>= 1) r = (r << 1) | (x & 1); rev[i] = r; }
+  for (let i = 0; i < N / 2; i++) { cos[i] = Math.cos(2 * Math.PI * i / N); sin[i] = -Math.sin(2 * Math.PI * i / N); }
+  for (let i = 0; i < N; i++) win[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (N - 1));
+  fftTables = { rev, cos, sin, win, re: new Float64Array(N), im: new Float64Array(N) };
+}
+function spectrogram(buf, cols, refDb) {
+  if (!fftTables) fftInit();
+  const { rev, cos, sin, win, re, im } = fftTables, N = FFT_N, d = buf.getChannelData(0), sr = buf.sampleRate;
+  const fmax = Math.min(12000, sr / 2), binMax = Math.max(8, Math.floor(fmax / (sr / N))), out = new Float32Array(cols * SPEC_ROWS);
+  let peak = -Infinity;
+  for (let x = 0; x < cols; x++) {
+    const c0 = Math.floor((x + 0.5) / cols * d.length) - N / 2;
+    for (let i = 0; i < N; i++) { const v = d[c0 + i]; re[rev[i]] = (v === undefined ? 0 : v) * win[i]; im[rev[i]] = 0; }
+    for (let size = 2; size <= N; size <<= 1) {
+      const half = size >> 1, tstep = N / size;
+      for (let i = 0; i < N; i += size) for (let j = i, k = 0; j < i + half; j++, k += tstep) {
+        const l = j + half, tr = re[l] * cos[k] - im[l] * sin[k], ti = re[l] * sin[k] + im[l] * cos[k];
+        re[l] = re[j] - tr; im[l] = im[j] - ti; re[j] += tr; im[j] += ti;
+      }
+    }
+    for (let r = 0; r < SPEC_ROWS; r++) {
+      const b0 = Math.floor(r * binMax / SPEC_ROWS), b1 = Math.max(b0 + 1, Math.floor((r + 1) * binMax / SPEC_ROWS));
+      let m = 0;
+      for (let b = b0; b < b1; b++) m = Math.max(m, re[b] * re[b] + im[b] * im[b]);
+      const db = 10 * Math.log10(m / (N * N) + 1e-14);
+      out[x * SPEC_ROWS + r] = db;
+      if (db > peak) peak = db;
+    }
+  }
+  return { data: out, cols, refDb: refDb === undefined ? peak : refDb, fmax };
+}
+const RAMP = [[0, 0, 4], [38, 12, 88], [128, 24, 120], [212, 62, 84], [250, 140, 30], [252, 236, 140]];
+function ramp(t) {
+  t = Math.max(0, Math.min(1, t)) * (RAMP.length - 1);
+  const i = Math.min(RAMP.length - 2, Math.floor(t)), f = t - i, a = RAMP[i], b = RAMP[i + 1];
+  return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
+}
+function drawSpectrum(c) {
+  const { g, W, H } = sizeCanvas(c);
+  g.clearRect(0, 0, W, H);
+  const sp = (c === clips.fixed && c.specTone) || c.spec;
+  if (!sp) return;
+  const img = new ImageData(sp.cols, SPEC_ROWS);
+  for (let x = 0; x < sp.cols; x++) for (let r = 0; r < SPEC_ROWS; r++) {
+    const col = ramp((sp.data[x * SPEC_ROWS + r] - sp.refDb + SPEC_RANGE_DB) / SPEC_RANGE_DB), o = ((SPEC_ROWS - 1 - r) * sp.cols + x) * 4;
+    img.data[o] = col[0]; img.data[o + 1] = col[1]; img.data[o + 2] = col[2]; img.data[o + 3] = 255;
+  }
+  const tmp = document.createElement('canvas'); tmp.width = sp.cols; tmp.height = SPEC_ROWS;
+  tmp.getContext('2d').putImageData(img, 0, 0);
+  g.imageSmoothingEnabled = true; g.drawImage(tmp, 0, 0, W, H);
+  const ax = c.box.querySelector('.axis');                  // frequency scale
+  ax.textContent = '';
+  for (let k = 2000; k < sp.fmax; k += 2000) {
+    const y = (1 - k / sp.fmax) * 100;
+    const line = document.createElement('i'); line.style.top = y + '%';
+    const lab = document.createElement('span'); lab.style.top = y + '%'; lab.textContent = (k / 1000) + ' kHz';
+    ax.append(line, lab);
+  }
+}
+function redraw(c) {
+  c.box.classList.toggle('spec', viewMode === 'spec');
+  c.box.querySelector('.axis').hidden = viewMode !== 'spec';
+  if (viewMode === 'spec') {
+    if (c.buf && !c.spec) c.spec = spectrogram(c.buf, Math.max(120, Math.min(900, Math.floor(c.canvas.clientWidth || 600))));
+    drawSpectrum(c);
+  } else drawWaveform(c);
+}
+async function decodeClip(key, arrayBuffer) {
+  const c = clips[key];
+  c.buf = null; c.spec = null; c.specTone = null; c.box.querySelector('.axis').textContent = '';
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    c.buf = await ctx.decodeAudioData(arrayBuffer);
+    ctx.close();
+  } catch (e) { c.buf = null; }
+  redraw(c);
+  if (key === 'fixed') scheduleToneSpectrum();
+}
+document.querySelectorAll('input[name=view]').forEach(r => r.onchange = () => {
+  viewMode = document.querySelector('input[name=view]:checked').value;
+  for (const c of Object.values(clips)) redraw(c);
+  scheduleToneSpectrum();
+});
+window.addEventListener('resize', () => { for (const c of Object.values(clips)) { if (c.buf) { c.spec = null; c.specTone = null; redraw(c); } } scheduleToneSpectrum(); });
+
+/* ---- tone: live preview with browser filters ---- */
+let ac = null, nodes = null, comp = null, toneNote = '';
+function ensureGraph() {
+  if (ac) { if (ac.state === 'suspended') ac.resume(); return; }
+  try {
+    ac = new (window.AudioContext || window.webkitAudioContext)();
+    const src = ac.createMediaElementSource(clips.fixed.audio);
+    nodes = {};
+    let prev = src;
+    for (const [k, [type, f, q]] of Object.entries(TONE_BANDS)) {
+      const n = ac.createBiquadFilter(); n.type = type; n.frequency.value = f; if (q) n.Q.value = q; n.gain.value = tone[k];
+      prev.connect(n); prev = n; nodes[k] = n;
+    }
+    comp = ac.createGain(); prev.connect(comp); comp.connect(ac.destination);
+    applyToneToGraph();
+  } catch (e) {
+    ac = null; nodes = null;
+    $('tonehint').textContent = 'Live preview is not available on this computer. Your tone changes are still applied to the saved file.';
+  }
+}
+/* Keep the level roughly steady while previewing: estimate the average gain of the curve over the speech range. */
+function compensation() {
+  const F = 48, f = new Float32Array(F), mag = new Float32Array(F), ph = new Float32Array(F), tot = new Float64Array(F).fill(1);
+  for (let i = 0; i < F; i++) f[i] = 100 * Math.pow(100, i / (F - 1));        // 100 Hz .. 10 kHz
+  for (const n of Object.values(nodes)) { n.getFrequencyResponse(f, mag, ph); for (let i = 0; i < F; i++) tot[i] *= mag[i]; }
+  let num = 0, den = 0;
+  for (let i = 0; i < F; i++) { const w = 1 / (1 + Math.pow(f[i] / 700, 2)) * (f[i] / 700 < 1 ? f[i] / 700 : 1); num += w * tot[i] * tot[i]; den += w; }
+  return Math.max(-6, Math.min(6, -10 * Math.log10(num / den)));
+}
+function applyToneToGraph() {
+  if (!nodes) return;
+  for (const [k, n] of Object.entries(nodes)) n.gain.setTargetAtTime(tone[k], ac.currentTime, 0.02);
+  comp.gain.setTargetAtTime(Math.pow(10, compensation() / 20), ac.currentTime, 0.03);
+}
+/* The After picture follows the tone: render it through the same filters, off-line. */
+let toneTimer = 0, toneToken = 0;
+function scheduleToneSpectrum() {
+  clearTimeout(toneTimer);
+  toneTimer = setTimeout(async () => {
+    const c = clips.fixed, token = ++toneToken;
+    if (viewMode !== 'spec' || !c.buf) return;
+    if (!c.spec) { redraw(c); }
+    if (isFlat()) { c.specTone = null; drawSpectrum(c); return; }
+    try {
+      const mono = c.buf, off = new OfflineAudioContext(1, mono.length, mono.sampleRate);
+      const src = off.createBufferSource(); src.buffer = mono;
+      let prev = src;
+      for (const [k, [type, f, q]] of Object.entries(TONE_BANDS)) {
+        const n = off.createBiquadFilter(); n.type = type; n.frequency.value = f; if (q) n.Q.value = q; n.gain.value = tone[k];
+        prev.connect(n); prev = n;
+      }
+      prev.connect(off.destination); src.start();
+      const done = await off.startRendering();
+      if (token !== toneToken) return;                        // a newer change has replaced this one
+      c.specTone = spectrogram(done, c.spec.cols, c.spec.refDb);
+      drawSpectrum(c);
+    } catch (e) { /* the picture just stays as it was */ }
+  }, 220);
+}
+function toneChanged() {
+  for (const k of Object.keys(tone)) {
+    $('v-' + k).textContent = (tone[k] > 0 ? '+' : '') + tone[k].toFixed(1) + ' dB';
+    $('t-' + k).value = tone[k];
+  }
+  applyToneToGraph();
+  scheduleToneSpectrum();
+  $('dl').textContent = native ? (isFlat() ? 'Save repaired file' : 'Save with your tone changes') : 'Download repaired file';
+}
+for (const k of Object.keys(tone)) $('t-' + k).oninput = e => { tone[k] = parseFloat(e.target.value); toneChanged(); };
+document.querySelectorAll('[data-preset]').forEach(b => b.onclick = () => { Object.assign(tone, PRESETS[b.dataset.preset]); toneChanged(); });
+function resetTone() { Object.assign(tone, PRESETS.flat); toneChanged(); }
 
 function settings() {
   const o = {
@@ -497,18 +817,22 @@ $('go').onclick = async () => {
     for (const l of lines) { const li = document.createElement('li'); li.textContent = l; ul.appendChild(li); }
     if (origUrl) URL.revokeObjectURL(origUrl);
     if (fixedUrl) URL.revokeObjectURL(fixedUrl);
+    resultPath = native ? sent.path : null; resultMode = opts.mode;
+    resetTone();
+    $('tonebox').hidden = !native;                         // tone is applied to the saved file by the app itself
+    $('saved').textContent = ''; $('saved').classList.remove('bad');
     show($('result'));
     if (native) {
-      origUrl = attach($('orig'), $('wo'), await api().read_original(sent.path));
-      fixedUrl = attach($('fixed'), $('wf'), await api().read_result(id));
+      origUrl = attach('orig', await api().read_original(sent.path));
+      fixedUrl = attach('fixed', await api().read_result(id));
     } else {
       origUrl = URL.createObjectURL(sent);
       $('orig').src = origUrl;
       $('fixed').src = '/download/' + id;
       $('dl').href = '/download/' + id;
-      $('wo').hidden = $('wf').hidden = false;
-      sent.arrayBuffer().then(b => drawWave($('wo'), b));
-      fetch('/download/' + id).then(x => x.arrayBuffer()).then(b => drawWave($('wf'), b)).catch(() => { $('wf').hidden = true; });
+      clips.orig.box.hidden = clips.fixed.box.hidden = false;
+      sent.arrayBuffer().then(b => decodeClip('orig', b));
+      fetch('/download/' + id).then(x => x.arrayBuffer()).then(b => decodeClip('fixed', b)).catch(() => { clips.fixed.box.hidden = true; });
     }
     $('result').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   } catch (e) {
@@ -558,9 +882,35 @@ async function saveResult(e) {
   if (!native) return;                                  // browser mode: the link downloads normally
   e.preventDefault();
   if (!jobId) return;
-  const r = await api().save(jobId);
-  if (r.error) $('saved').textContent = r.error;
-  else if (r.saved) $('saved').textContent = 'Saved to ' + r.saved;
+  const sv = $('saved');
+  sv.classList.remove('bad');
+  let id = jobId;
+  if (!isFlat()) {                                      // tone changes: a fast pass over the stored repair, not a new repair
+    $('dl').style.pointerEvents = 'none';
+    sv.textContent = 'Applying your tone changes';
+    try {
+      const fmt = document.querySelector('input[name=fmt]:checked').value;
+      const r = await api().start(resultPath, { mode: resultMode, fmt, base_job: jobId, tone: Object.assign({}, tone) });
+      if (r.error) throw new Error(r.error);
+      id = r.id;
+      for (;;) {
+        await new Promise(res => setTimeout(res, 300));
+        const s = await api().status(id);
+        if (s.state === 'error') throw new Error(s.message);
+        if (s.state === 'done') break;
+        sv.textContent = s.message;
+      }
+    } catch (err) {
+      sv.textContent = err.message || 'The tone change could not be applied.'; sv.classList.add('bad');
+      $('dl').style.pointerEvents = '';
+      return;
+    }
+    $('dl').style.pointerEvents = '';
+  }
+  const r = await api().save(id);
+  if (r.error) { sv.textContent = r.error; sv.classList.add('bad'); }
+  else if (r.saved) sv.textContent = 'Saved to ' + r.saved;
+  else sv.textContent = '';
 }
 $('dl').onclick = saveResult;
 $('dl').onkeydown = e => { if (native && (e.key === 'Enter' || e.key === ' ')) saveResult(e); };
