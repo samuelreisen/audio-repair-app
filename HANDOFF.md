@@ -1,4 +1,4 @@
-<!-- handoff-mark: 1 -->
+<!-- handoff-mark: 2 -->
 # Audio Repair – project handoff
 
 > **MAINTENANCE RULE: everything that is done to this project is saved in this file.** Add a dated entry at the top of
@@ -115,6 +115,7 @@ this app; do not commit that folder from here.)
 | `static/index.html` | The whole interface (HTML + CSS + JS, no build step); works in the app window and, for development, in a browser |
 | `mark.json` | Which mark is built into this source (`{"mark": 1, "name": "Mk I", ...}`) |
 | `tools/make_update.py` | Makes the next `.srar` update (section 9) |
+| `tools/clean_hparams.py` | Makes the Studio model's settings file readable on Windows (section 6); run by the GitHub build |
 | `updates/history.json` | Every mark made; `updates/out/` holds the made `.srar` files (git-ignored) |
 | `build.py` | PyInstaller build (builds in the temp folder, copies to `dist/`) |
 | `installer.iss` | Windows installer (Inno Setup 6): per user, shortcuts, uninstaller, `.srar` file type, HANDOFF.md next to the program |
@@ -166,6 +167,13 @@ clicks / bangs repaired, both now at -16.0 LUFS (one was stuck at -25 LUFS befor
   `ai.models_root()` = bundled folder, else `AR_MODELS`, else the user's local data folder. The workflow downloads them
   at build time and checks the Studio weights' SHA-256
   (`f9d035f318de3e6d919bc70cf7ad7d32b4fe92ec5cbe0b30029a27f5db07d9d6`, 713,176,232 bytes).
+- **The model's `hparams.yaml` was written on Linux** and stores folders as `!!python/object/apply:pathlib.PosixPath`
+  followed by their parts. Windows cannot build a PosixPath, so Studio voice failed with `NotImplementedError: cannot
+  instantiate 'PosixPath' on your system` (the 1.1.0 installers shipped this way; found 2026-10-18 on a real
+  recording). Three guards now: `tools/clean_hparams.py` rewrites the file in the GitHub build, the build then loads
+  it with `HParams.load` and fails if it cannot, and `studio_core._patch_hparams_loader` makes the app read either
+  form (so an update fixes already-installed apps). Lesson: **test Studio voice on the installer GitHub built, not
+  only on a local build**: the locally staged copy of this file had been cleaned by hand, which hid the bug.
 - Running from source on Python 3.14 (`.venv`, no PyTorch), the models are reached through `.venv311` in a subprocess
   (`dfn_worker.py`, `studio_worker.py`). The packaged app runs them in-process (`ai.inprocess()`).
 
@@ -188,6 +196,16 @@ clicks / bangs repaired, both now at -16.0 LUFS (one was stuck at -25 LUFS befor
   object's public attributes and recurses into the window. It is `_window`.
 - Force-killing `msedgewebview2` processes during tests can leave the next launch hanging at "creating window"; wait
   for them to exit. Never kill web-view processes you did not start (other apps use them).
+
+### Error reports (added in Mk II)
+A failed repair no longer only says "Something went wrong". `engine._error_detail` builds a plain-text report (time,
+version / mark, system, file name and size, mode and settings, the stage that was running and how far it got, what had
+already been done, the error type and message, the last 6000 characters of the traceback; never the recording or its
+folder). The status call returns it as `detail` (and `log`), the page shows it under **Show details**, with **Copy
+details** and **Open error log**, and it is appended to `errors.log` in the data folder (capped at about 200 KB).
+Plain `AudioError`s (unsupported file, no such file) have no report: their message already says what is wrong. The
+short message names the error type and stage, e.g. "(NotImplementedError, at: Rebuilding the voice (AI))". When a user
+reports a failure, ask for the copied details first.
 
 ## 8. Building and packaging
 
@@ -265,6 +283,34 @@ files. `app_updates.parse` checks all of it and gives a plain-English reason for
 ## 12. Change log (newest first; add an entry for everything you do; see the rule at the top)
 
 Format: **date – title.** Then Asked / Changed / Verified / Not done.
+
+### 2026-10-18 – Mk II "Studio voice fix and error details" – update file
+- **Asked:** a user's Studio voice repair of a real 160 s voice memo ended with "This file could not be repaired /
+  Something went wrong while processing this file." They asked for it to be fixed in Mk II, and for Mk II to include an
+  advanced error message.
+- **Changed:**
+  - **Cause 1 (Windows could not read the model's settings file).** The `hparams.yaml` shipped with the Studio model
+    stores folders as `!!python/object/apply:pathlib.PosixPath`, which Windows cannot build
+    (`NotImplementedError: cannot instantiate 'PosixPath' on your system`). `studio_core._patch_hparams_loader` now
+    reads that form (and plain paths) safely; `tools/clean_hparams.py` cleans the file in the GitHub build, which then
+    loads it with `HParams.load` and fails the build if it cannot.
+  - **Cause 2 (found by the new error report, behind cause 1).** `resemble_enhance` imports `deepspeed` (its training
+    code) at start-up, and the GitHub-built app has no such package: `ModuleNotFoundError: No module named
+    'deepspeed'`. A local environment had a hand-made fake, which hid it. `pipeline/_deepspeed_stub.py` now registers a
+    stand-in when the real package is missing (training raises a clear error); `studio_core.restore` installs it.
+  - **Advanced error message.** `engine._error_detail` / `_log_error`; the page's **Show details**, **Copy details**
+    and **Open error log**; `errors.log` in the data folder (HANDOFF section 7, "Error reports"). The short message now
+    names the error type and the stage, e.g. "(NotImplementedError, at: Rebuilding the voice (AI))".
+  - Tests: `tests/test_errors.py` (error report, log cap, settings-file fix, the stand-in with deepspeed hidden).
+- **Verified:** on the real, GitHub-built Windows installer (1.1.0): the failure was reproduced with the error report
+  showing cause 1, then cause 2 after fixing cause 1; with Mk II installed into that app, Studio voice on a 13 s test
+  clip completed (rebuilt, mastered to -16.0 LUFS, saved, no error). A full Studio run of the 160 s voice memo from
+  source was past the old failure point and progressing when this was written. Normal mode on the real 160 s and 109 s
+  voice memos was fine on the installed app (33 s and 46 s). Tests 43/43 in the Python 3.11 environment.
+- **Not done:** the Mac app was not run; Studio voice on a Mac was never tested (the Mac build reads the same
+  settings file, where PosixPath is valid, so cause 1 does not apply there, but cause 2 (deepspeed) would have). New
+  installers built after this carry the cleaned settings file; the stand-in is in the app either way.
+- **Update file:** `Audio Repair - Mk II update.srar`, needs app 1.1.0 or newer. Installing it replaces the user's older HANDOFF.md with this one.
 
 ### 2026-10-17 – Updates (.srar marks) and this handoff document; app 1.1.0 with Mk I built in
 - **Asked:** update functionality like SoundField, with the file extension SRAR; a handoff file in GitHub and the

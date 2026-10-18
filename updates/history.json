@@ -1,1 +1,23 @@
-{"marks": [{"mark": 1, "name": "Mk I", "title": "First release with updates", "created": "2026-10-17", "file": null, "note": "built into the 1.1.0 installers"}]}
+{
+ "marks": [
+  {
+   "mark": 1,
+   "name": "Mk I",
+   "title": "First release with updates",
+   "created": "2026-10-17",
+   "file": null,
+   "note": "built into the 1.1.0 installers"
+  },
+  {
+   "mark": 2,
+   "name": "Mk II",
+   "title": "Studio voice fix and error details",
+   "notes": "Fixed: Studio voice (AI) failed on Windows with 'Something went wrong while processing this file'. Two causes, both fixed: the AI model's settings file could not be read on Windows, and a library it imports was missing from the app.\nNew: when a repair fails, Show details gives the stage it stopped at, your settings and the full technical error, with Copy details and Open error log buttons. The same details are saved to errors.log.",
+   "created": "2026-10-18",
+   "file": "Audio Repair - Mk II update.srar",
+   "sha256": "20145e5c182ca1b64ac31d7fe650183402bee23e2ef509a0947f5a9befec865f",
+   "bytes": 74739,
+   "minApp": "1.1.0"
+  }
+ ]
+}

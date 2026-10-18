@@ -55,6 +55,10 @@ jobs:
           HF=https://huggingface.co/ResembleAI/resemble-enhance/resolve/main/enhancer_stage2
           curl -sSfL "$HF/hparams.yaml" -o models/enhancer_stage2/hparams.yaml
           curl -sSfL "$HF/ds/G/default/mp_rank_00_model_states.pt" -o models/enhancer_stage2/ds/G/default/mp_rank_00_model_states.pt
+          # The settings file was written on Linux and holds paths Windows cannot read (see the script)
+          python tools/clean_hparams.py models/enhancer_stage2/hparams.yaml
+          # fail the build here, not on a user's computer, if Studio voice cannot read its own settings
+          python -c "from pathlib import Path; from resemble_enhance.enhancer.hparams import HParams; h = HParams.load(Path('models/enhancer_stage2')); print('Studio settings load OK, wav_rate', h.wav_rate)"
           python - <<'PY'
           import hashlib, pathlib, sys
           f = pathlib.Path("models/enhancer_stage2/ds/G/default/mp_rank_00_model_states.pt")

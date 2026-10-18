@@ -8,14 +8,18 @@ The approach of CrispVoice (https://github.com/Francium-Tech/CrispVoice, MIT):
 """
 import gc
 import os
+import re
 import threading
+from pathlib import Path
 
 import numpy as np
 
 try:
     from . import ai
+    from . import _deepspeed_stub
 except ImportError:                      # run as a plain script from pipeline/ (studio_worker.py)
     import ai
+    import _deepspeed_stub
 
 _lock = threading.Lock()                 # one restoration at a time: the model is large
 
@@ -26,16 +30,41 @@ def _to_rate(x, a, b):
                                      resampling_method="sinc_interp_kaiser", beta=14.769656459379492)
 
 
+_PATH_TAG = re.compile(r"!!python/object/apply:pathlib\.\w*Path[ \t]*\r?\n((?:[ \t]*-[^\r\n]*\r?\n?)+)")
+
+
+def _plain_paths(text):
+    """The model's hparams.yaml was written on Linux and stores folders as "!!python/object/apply:pathlib.PosixPath"
+    followed by their parts. Windows cannot build a PosixPath, so Studio voice failed there ("cannot instantiate
+    'PosixPath' on your system"). The folders are only training settings: write them as plain text instead."""
+    def one(m):
+        parts = [ln.strip()[1:].strip() for ln in m.group(1).splitlines() if ln.strip()]
+        return "'" + "/".join(parts) + "'" + chr(10)
+    return _PATH_TAG.sub(one, text)
+
+
+def _patch_hparams_loader():
+    from omegaconf import OmegaConf
+    from resemble_enhance import hparams as _hp
+
+    def from_yaml(cls, path):
+        text = _plain_paths(Path(path).read_text(encoding="utf-8"))
+        return cls(**dict(OmegaConf.merge(cls(), OmegaConf.create(text))))
+    _hp.HParams.from_yaml = classmethod(from_yaml)
+
+
 def restore(mono, sr, run_dir, nfe=32, lambd=0.4, tau=0.5, blend=0.25, threads=None, progress=None):
     """mono: float32 1-D array at sr.  Returns (restored float32 1-D array, its sample rate 44100).
 
     progress(done, total) is called after every 10-second chunk."""
     import torch
+    _deepspeed_stub.install()            # Resemble Enhance imports deepspeed (training code); see the stub's docstring
     from resemble_enhance.enhancer import enhancer as _enhancer_module
     from resemble_enhance.enhancer.inference import load_enhancer
     # Loading logs a parameter table via pandas.to_markdown, which needs an optional package whose version a packaged
     # app cannot always read. The table is only a log message, so skip it.
     _enhancer_module.Enhancer.summarize = lambda self: ""
+    _patch_hparams_loader()
     from resemble_enhance.inference import inference_chunk, merge_chunks, remove_weight_norm_recursively
 
     with _lock:

@@ -170,6 +170,15 @@
   .btns .btn { flex: 1 1 140px; }
   .notice { font-size: .9375rem; color: var(--red-text); }
 
+  /* Advanced error details */
+  #errbox { margin-top: 12px; }
+  #errbox .btns { margin-top: 0; }
+  #errdetail { margin: 12px 0 0; padding: 12px; max-height: 260px; overflow: auto; border-radius: 12px; background: var(--fill);
+               font: .75rem/1.45 ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace; white-space: pre-wrap; word-break: break-word;
+               user-select: text; -webkit-user-select: text; }
+  #errlog { margin-top: 8px; font-size: .8125rem; color: var(--label2); word-break: break-all; }
+  #errlog:empty { display: none; }
+
   /* Entry reveal: plays when scrolled into view and again from either direction */
   @media (prefers-reduced-motion: no-preference) {
     .js .reveal { opacity: 0; transform: translateY(12px); transition: opacity 450ms var(--ease), transform 450ms var(--ease); }
@@ -256,6 +265,15 @@
       <div id="msg" aria-live="polite">Starting</div>
       <div class="progress"><i id="bar"></i></div>
       <div id="err" role="alert"></div>
+      <div id="errbox" hidden>
+        <div class="btns">
+          <button type="button" class="btn small" id="errtoggle" aria-expanded="false">Show details</button>
+          <button type="button" class="btn small" id="errcopy" hidden>Copy details</button>
+          <button type="button" class="btn small" id="errlogbtn" hidden>Open error log</button>
+        </div>
+        <pre id="errdetail" hidden tabindex="0"></pre>
+        <div id="errlog"></div>
+      </div>
     </div>
   </section>
 
@@ -297,7 +315,7 @@
 
 <script>
 const $ = id => document.getElementById(id);
-let file = null, busy = false, origUrl = null, fixedUrl = null, jobId = null;
+let file = null, busy = false, origUrl = null, fixedUrl = null, jobId = null, failure = null;
 const drop = $('drop'), input = $('file');
 
 /* Two ways to run: inside the desktop app window the page talks to Python directly (no server, native Open and
@@ -437,6 +455,7 @@ $('go').onclick = async () => {
   $('go').disabled = true;
   $('result').hidden = true;
   $('err').textContent = '';
+  hideErrBox();
   $('saved').textContent = '';
   show($('prog'));
   $('msg').textContent = native ? 'Starting' : 'Uploading';
@@ -458,6 +477,7 @@ $('go').onclick = async () => {
     }
     jobId = id;
     let lines = [];
+    failure = null;
     while (true) {
       await new Promise(r => setTimeout(r, 700));
       let s;
@@ -467,7 +487,7 @@ $('go').onclick = async () => {
         if (!pr.ok) throw new Error(await errText(pr));
         s = await pr.json();
       }
-      if (s.state === 'error') { $('msg').textContent = 'This file could not be repaired'; throw new Error(s.message); }
+      if (s.state === 'error') { $('msg').textContent = 'This file could not be repaired'; failure = s; throw new Error(s.message); }
       $('msg').textContent = s.message;
       $('bar').style.transform = 'scaleX(' + s.progress + ')';
       if (s.state === 'done') { lines = s.report || []; break; }
@@ -493,10 +513,45 @@ $('go').onclick = async () => {
     $('result').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   } catch (e) {
     $('err').textContent = e.message || 'Something went wrong. Try again.';
+    showErrBox(failure);
   }
   busy = false;
   $('go').disabled = !file;
 };
+
+/* Advanced error details: what stage stopped, the settings, the full technical error. Reported by the engine. */
+function hideErrBox() {
+  $('errbox').hidden = true; $('errdetail').hidden = true; $('errdetail').textContent = '';
+  $('errtoggle').textContent = 'Show details'; $('errtoggle').setAttribute('aria-expanded', 'false');
+  $('errlog').textContent = '';
+}
+function showErrBox(f) {
+  const detail = f && f.detail;
+  if (!detail) { hideErrBox(); return; }
+  $('errdetail').textContent = detail;
+  $('errbox').hidden = false;
+  $('errcopy').hidden = false;
+  $('errlogbtn').hidden = !(native && f.log);
+  $('errlog').textContent = f.log ? 'Also saved to ' + f.log : '';
+}
+$('errtoggle').onclick = () => {
+  const open = $('errdetail').hidden;
+  $('errdetail').hidden = !open;
+  $('errtoggle').textContent = open ? 'Hide details' : 'Show details';
+  $('errtoggle').setAttribute('aria-expanded', String(open));
+};
+$('errcopy').onclick = async () => {
+  const t = $('errdetail').textContent;
+  try { await navigator.clipboard.writeText(t); $('errcopy').textContent = 'Copied'; }
+  catch (e) {                                           // no clipboard access: select the text so Ctrl+C works
+    $('errdetail').hidden = false;
+    const r = document.createRange(); r.selectNodeContents($('errdetail'));
+    const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    $('errcopy').textContent = 'Press Ctrl+C';
+  }
+  setTimeout(() => { $('errcopy').textContent = 'Copy details'; }, 2500);
+};
+$('errlogbtn').onclick = () => { if (failure && failure.log) api().reveal(failure.log); };
 
 /* Native app: the download button is a Save dialog. */
 async function saveResult(e) {
